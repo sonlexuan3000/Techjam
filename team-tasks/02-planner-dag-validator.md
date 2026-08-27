@@ -1,7 +1,7 @@
 # Task 02 — Planner Service và DAG Validator
 
-- **Owner:** Chưa có
-- **Status:** Unassigned
+- **Owner:** `@tlam0806`
+- **Status:** In progress
 - **Suggested branch:** `feat/task-02-planner-dag-validator`
 - **Reviewer:** `@sonlexuan3000`
 
