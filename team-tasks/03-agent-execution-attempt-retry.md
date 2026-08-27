@@ -1,7 +1,7 @@
 # Task 03 — Agent Execution Gateway, Capabilities và Run Correlation
 
-- **Owner:** Chưa có
-- **Status:** Unassigned
+- **Owner:** VinhLuu25
+- **Status:** In progress
 - **Suggested branch:** `feat/task-03-agent-execution`
 - **Reviewer:** `@sonlexuan3000`
 

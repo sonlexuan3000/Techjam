@@ -47,7 +47,7 @@ tạp.
 | --- | --- | --- | --- |
 | [Task 01](./01-coordination-core.md) | Coordination core và scheduler | Chưa có | Unassigned |
 | [Task 02](./02-planner-dag-validator.md) | Planner service và DAG validator | @tlam0806 | In progress |
-| [Task 03](./03-agent-execution-attempt-retry.md) | Agent execution gateway, capabilities và Run correlation | Chưa có | Unassigned |
+| [Task 03](./03-agent-execution-attempt-retry.md) | Agent execution gateway, capabilities và Run correlation | VnhLuu25 | In progress |
 | [Task 04](./04-coordination-ui.md) | Coordination UI, graph và event timeline | Chưa có | Unassigned |
 | [Task 05](./05-api-persistence-testing-demo.md) | API, persistence, integration tests và demo | Chưa có | Unassigned |
 
