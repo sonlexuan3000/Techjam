@@ -211,6 +211,36 @@ describe("PlannerService", () => {
     expect(cancel).toHaveBeenCalledWith("planner-run-1");
   });
 
+  it("includes AgentRun registration in the planner timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { gateway, cancel } = fakeGateway({
+        ok: true,
+        handle: {
+          run: managedRun({ status: "running", output: null }),
+          completion: new Promise<ManagedAgentRun>(() => undefined),
+        },
+      });
+      const registerAgentRun = vi.fn(() => new Promise<boolean>(() => undefined));
+      const resultPromise = new PlannerService(gateway).createPlan(
+        plannerRequest({ timeoutMs: 5, registerAgentRun }),
+      );
+
+      await vi.advanceTimersByTimeAsync(5);
+
+      await expect(resultPromise).resolves.toEqual({
+        ok: false,
+        plannerAgentRunId: "planner-run-1",
+        code: "plan_timed_out",
+        error: "Planner AgentRun timed out",
+      });
+      expect(registerAgentRun).toHaveBeenCalledWith("planner-run-1");
+      expect(cancel).toHaveBeenCalledWith("planner-run-1");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("cancels and ignores output when parent registration loses the stop race", async () => {
     const completion = new Promise<ManagedAgentRun>(() => undefined);
     const { gateway, cancel } = fakeGateway({
