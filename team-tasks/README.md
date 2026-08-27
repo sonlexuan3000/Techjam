@@ -6,6 +6,13 @@ Request trên GitLab.
 
 Leader và người duyệt cuối: **@sonlexuan3000**.
 
+Trước khi bắt đầu code, mọi thành viên phải đọc
+[Coordination MVP Contracts v1](./CONTRACTS.md). Đây là source of truth cho API,
+types, Planner JSON, module interfaces, statuses và events giữa năm task. Server
+ports đã được scaffold tại
+[`apps/server/src/coordination-types.ts`](../apps/server/src/coordination-types.ts);
+không copy chúng sang một server file khác.
+
 ## Scope đã khóa
 
 MVP chỉ gồm:
@@ -40,7 +47,7 @@ tạp.
 | --- | --- | --- | --- |
 | [Task 01](./01-coordination-core.md) | Coordination core và scheduler | Chưa có | Unassigned |
 | [Task 02](./02-planner-dag-validator.md) | Planner service và DAG validator | Chưa có | Unassigned |
-| [Task 03](./03-agent-execution-attempt-retry.md) | Agent execution, attempt, timeout và retry | Chưa có | Unassigned |
+| [Task 03](./03-agent-execution-attempt-retry.md) | Agent execution gateway, capabilities và Run correlation | Chưa có | Unassigned |
 | [Task 04](./04-coordination-ui.md) | Coordination UI, graph và event timeline | Chưa có | Unassigned |
 | [Task 05](./05-api-persistence-testing-demo.md) | API, persistence, integration tests và demo | Chưa có | Unassigned |
 
@@ -97,7 +104,7 @@ Commit message nên nhỏ và mô tả đúng thay đổi:
 
 ```text
 feat(task-02): validate DAG cycles and dependencies
-test(task-03): reject stale attempt completion
+test(task-01): reject stale attempt completion
 fix(task-04): keep event polling after refresh
 docs(task-05): document controlled timeout demo
 ```
@@ -194,7 +201,7 @@ Chỉ bật “Require status checks” sau khi repo có GitHub Actions workflow
 
 ## Thứ tự tích hợp
 
-1. Freeze shared contracts từ Task 01.
+1. Merge và giữ ổn định [Coordination MVP Contracts v1](./CONTRACTS.md).
 2. Merge Planner/DAG validator và Agent execution gateway.
 3. Merge Coordination core với hai interface trên.
 4. Merge API/persistence.

@@ -5,6 +5,8 @@
 - **Suggested branch:** `feat/task-02-planner-dag-validator`
 - **Reviewer:** `@sonlexuan3000`
 
+**Shared contract:** [Coordination MVP Contracts v1](./CONTRACTS.md)
+
 ## Mục tiêu
 
 Biến user prompt thành một dependency graph có schema rõ ràng bằng Planner Agent,
@@ -73,19 +75,22 @@ timeout, retry policy hoặc task status.
 - [ ] Tốt nhất yêu cầu mọi task đều dẫn tới final task.
 - [ ] Không tự âm thầm sửa graph lỗi.
 - [ ] Trả validation error đủ rõ để lưu vào event/UI nhưng không lộ secret.
+- [ ] Planner admission/runtime failure trả typed failure để core emit
+  `plan_failed`; Planner timeout trả typed failure để emit `plan_timed_out`.
+- [ ] Không retry Planner trong MVP.
 
 ## Planner service boundary
 
-Planner service nên phụ thuộc vào interface, không phụ thuộc trực tiếp Runner
-implementation:
+Implement đúng `PlannerService` trong shared contract và gọi đúng
+`AgentExecutionGateway` của Task 03. Không tạo `PlannerExecutionGateway` riêng:
 
 ```ts
-interface PlannerExecutionGateway {
-  runPlanner(agentId: string, prompt: string): Promise<string>;
+interface PlannerService {
+  createPlan(request: PlannerRequest): Promise<PlannerResult>;
 }
 ```
 
-Task 03 có thể cung cấp adapter thật; tests dùng fake output string.
+Tests inject fake `AgentExecutionGateway` trả AgentRun có output string.
 
 ## Automated tests
 
@@ -100,6 +105,7 @@ Task 03 có thể cung cấp adapter thật; tests dùng fake output string.
 - [ ] Unknown capability bị reject.
 - [ ] Missing final task bị reject.
 - [ ] Planner failure không tạo task nửa chừng.
+- [ ] Planner timeout không tạo task nửa chừng.
 
 ## Definition of Done
 

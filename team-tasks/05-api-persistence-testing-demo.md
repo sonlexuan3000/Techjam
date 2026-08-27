@@ -5,6 +5,8 @@
 - **Suggested branch:** `feat/task-05-api-persistence-tests`
 - **Reviewer:** `@sonlexuan3000`
 
+**Shared contract:** [Coordination MVP Contracts v1](./CONTRACTS.md)
+
 ## Mục tiêu
 
 Nối các module MVP vào Fastify/JsonStore, cung cấp API cho frontend, persist
@@ -16,6 +18,7 @@ CoordinationService.
 ## Files sở hữu chính
 
 ```text
+apps/server/src/types.ts              # Database v2 composition only
 apps/server/src/store.ts
 apps/server/src/app.ts
 apps/server/src/index.ts
@@ -82,13 +85,15 @@ Detail response phải cung cấp một snapshot nhất quán:
 Live demo cần failure deterministic. Thêm development/demo-only fixture rõ ràng:
 
 ```text
-expire-first-worker-attempt
+timeout-first-worker-attempt
 ```
 
 Yêu cầu:
 
 - [ ] Chỉ hoạt động khi explicit demo config được bật.
 - [ ] Emit `demo_fault_injected`.
+- [ ] Task bị inject có ít nhất hai capable Workers và retry chọn Agent khác.
+- [ ] Fixture có thể không cancel old Run để chứng minh late result bị reject.
 - [ ] Không tạo hard-coded successful output.
 - [ ] Retry Worker vẫn gọi real Agent qua Starter Kit.
 - [ ] Có automated test với fake execution gateway.
@@ -97,6 +102,8 @@ Yêu cầu:
 ## Integration tests
 
 - [ ] HTTP create Coordination Run trả `202`.
+- [ ] Create trả trước khi Planner/Workers hoàn tất.
+- [ ] Active Coordination Run thứ hai bị reject `409`.
 - [ ] Invalid Agent IDs bị reject.
 - [ ] Stopped/busy Planner bị reject hoặc trả lỗi rõ.
 - [ ] Không đủ Workers bị reject.
@@ -108,6 +115,7 @@ Yêu cầu:
 - [ ] Max attempts tạo failed run.
 - [ ] List/detail API trả dữ liệu đúng sau refresh/reinitialize.
 - [ ] Existing `/api/agents` và Playground API tests vẫn pass.
+- [ ] Update capabilities/stop/delete selected Agent trong active run bị reject.
 
 ## Submission documentation
 

@@ -1,17 +1,20 @@
-# Task 03 — Agent Execution, Attempt, Timeout và Retry
+# Task 03 — Agent Execution Gateway, Capabilities và Run Correlation
 
 - **Owner:** Chưa có
 - **Status:** Unassigned
 - **Suggested branch:** `feat/task-03-agent-execution`
 - **Reviewer:** `@sonlexuan3000`
 
+**Shared contract:** [Coordination MVP Contracts v1](./CONTRACTS.md)
+
 ## Mục tiêu
 
 Tạo một internal execution boundary để CoordinationService gọi Planner/Worker
-qua `AgentService` và `AgentRunner` hiện có, đồng thời quản lý correlation giữa
+qua `AgentService` và `AgentRunner` hiện có, đồng thời lưu correlation giữa
 Coordination Task, Attempt và baseline AgentRun.
 
-MVP không có lease. Kết quả cũ được chặn bằng `currentAttemptId`.
+Task này không sở hữu task timeout, retry/requeue hoặc stale-result state
+transition; các phần đó thuộc Task 01. MVP không có lease.
 
 ## Files sở hữu chính
 
@@ -26,23 +29,8 @@ apps/server/src/agent-execution-gateway.test.ts
 ## Internal interface cần cung cấp
 
 ```ts
-interface AgentExecutionGateway {
-  start(
-    agentId: string,
-    prompt: string,
-    context: {
-      type: "planner" | "worker";
-      coordinationRunId: string;
-      taskId?: string;
-      attemptId?: string;
-    },
-  ): Promise<{
-    run: AgentRun;
-    completion: Promise<AgentRun>;
-  }>;
-
-  cancel(runId: string): Promise<void>;
-}
+type AgentExecutionGateway =
+  import("./coordination-types.js").AgentExecutionGateway;
 ```
 
 Public Playground API vẫn trả HTTP `202` như trước. Coordinator dùng
@@ -58,28 +46,16 @@ Public Playground API vẫn trả HTTP `202` như trước. Coordinator dùng
 - [ ] Không truyền Ark key vào prompt, DB, response hoặc log.
 - [ ] Hỗ trợ Agent capabilities trong create/update persistence.
 - [ ] Normalize capability lowercase, trim và deduplicate.
-- [ ] Worker attempt có timeout độc lập với Planner validation.
-- [ ] Khi timeout, invalidate current attempt trước khi requeue.
-- [ ] Best-effort cancel old AgentRun nhưng không block retry vô hạn.
-- [ ] Result chỉ được accept nếu `attemptId === task.currentAttemptId`.
-- [ ] Late completion trở thành `stale_result_rejected`.
-- [ ] `maxAttempts = 2`; không retry vô hạn.
-- [ ] Worker Run failed có thể retry một lần; document coarse retry policy.
+- [ ] Reject capability update/stop/delete Agent thuộc active Coordination Run.
+- [ ] `cancel(runId)` chỉ cancel nếu đúng Run đó vẫn active trên Agent.
+- [ ] Terminal/unknown Run cancel là idempotent no-op.
+- [ ] Managed completion luôn trả persisted terminal AgentRun.
+- [ ] Admission conflict giữ status code/meaning để scheduler xử lý được.
 
-## Timeout semantics
+## Boundary semantics
 
-```text
-Attempt A1 starts
-→ task.currentAttemptId = A1
-→ A1 timeout
-→ invalidate A1
-→ task ready
-→ Attempt A2 starts
-→ task.currentAttemptId = A2
-→ A1 returns late
-→ reject because A1 != A2
-```
-
+Gateway chỉ quản lý lifecycle của baseline AgentRun. Coordinator quyết định một
+AgentRun completion có còn là current attempt để commit task output hay không.
 Không dùng lease token hoặc heartbeat.
 
 ## Automated tests
@@ -88,11 +64,9 @@ Không dùng lease token hoặc heartbeat.
 - [ ] Existing one-active-Run-per-Agent test vẫn pass.
 - [ ] Managed Run trả completion promise đúng terminal state.
 - [ ] Correlation metadata đúng task/attempt.
-- [ ] Timeout đánh dấu attempt cũ invalid.
-- [ ] Retry tạo attempt ID mới.
-- [ ] Late output của attempt cũ bị reject.
-- [ ] Attempt hiện hành completed được accept.
-- [ ] Hết hai attempts tạo terminal failure.
+- [ ] Busy admission trả conflict và không tạo orphan AgentRun.
+- [ ] Cancel theo Run ID map đúng Agent.
+- [ ] Cancel Run A muộn không cancel Run B mới trên cùng Agent.
 - [ ] Cancellation không để Agent kẹt `busy`.
 
 ## Definition of Done
@@ -100,7 +74,7 @@ Không dùng lease token hoặc heartbeat.
 - Không gọi `AgentRunner` trực tiếp từ frontend hoặc API route.
 - Không duplicate workspace/session/status logic của AgentService.
 - Baseline tests không thay đổi semantics.
-- Timeout/retry/stale completion có automated evidence.
+- Managed execution/cancellation/correlation có automated evidence.
 - `npm run check` pass.
 
 ## Ngoài scope

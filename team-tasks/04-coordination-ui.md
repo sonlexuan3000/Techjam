@@ -5,6 +5,8 @@
 - **Suggested branch:** `feat/task-04-coordination-ui`
 - **Reviewer:** `@sonlexuan3000`
 
+**Shared contract:** [Coordination MVP Contracts v1](./CONTRACTS.md)
+
 ## Mục tiêu
 
 Thêm một Coordination view nhỏ vào React app hiện có để user chọn Planner,
@@ -84,6 +86,7 @@ Hiển thị theo `sequence`, không chỉ timestamp:
 ```text
 plan_requested
 plan_validated
+plan_failed / plan_timed_out
 task_ready
 attempt_started
 attempt_timed_out
