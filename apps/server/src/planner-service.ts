@@ -61,18 +61,17 @@ export class PlannerService implements PlannerServiceContract {
 
     const handle = startResult.handle;
     const plannerAgentRunId = handle.run.id;
+    ignoreUnexpectedCompletionFailure(handle.completion);
     const deadlineAt = Date.now() + request.timeoutMs;
     const registration = await waitUntilDeadline(
       Promise.resolve().then(() => request.registerAgentRun(plannerAgentRunId)),
       deadlineAt,
     );
     if (registration.type === "timed_out") {
-      ignoreUnexpectedCompletionFailure(handle.completion);
       this.cancelBestEffort(plannerAgentRunId);
       return planFailure(plannerAgentRunId, "plan_timed_out", "Planner AgentRun timed out");
     }
     if (registration.type === "rejected") {
-      ignoreUnexpectedCompletionFailure(handle.completion);
       this.cancelBestEffort(plannerAgentRunId);
       return planFailure(
         plannerAgentRunId,
@@ -82,7 +81,6 @@ export class PlannerService implements PlannerServiceContract {
     }
 
     if (!registration.value) {
-      ignoreUnexpectedCompletionFailure(handle.completion);
       this.cancelBestEffort(plannerAgentRunId);
       return planFailure(
         plannerAgentRunId,
