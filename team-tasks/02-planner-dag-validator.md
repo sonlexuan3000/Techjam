@@ -1,7 +1,7 @@
 # Task 02 — Planner Service và DAG Validator
 
 - **Owner:** `@tlam0806`
-- **Status:** In progress
+- **Status:** Ready for review
 - **Suggested branch:** `feat/task-02-planner-dag-validator`
 - **Reviewer:** `@sonlexuan3000`
 
@@ -58,31 +58,31 @@ timeout, retry policy hoặc task status.
 
 ## Checklist implementation
 
-- [ ] Build Planner prompt từ original user goal.
-- [ ] Đưa allowed capabilities và `request.maxTasks` vào prompt (default policy
+- [x] Build Planner prompt từ original user goal.
+- [x] Đưa allowed capabilities và `request.maxTasks` vào prompt (default policy
   hiện tại là 6; không hard-code trong validator).
-- [ ] Yêu cầu JSON only, không Markdown.
-- [ ] Strip một JSON Markdown fence nếu model vẫn trả fence.
-- [ ] Parse bằng `JSON.parse`.
-- [ ] Validate shape/length bằng Zod.
-- [ ] Reject duplicate task key.
-- [ ] Reject missing dependency.
-- [ ] Reject self-dependency.
-- [ ] Detect cycle bằng deterministic graph algorithm.
-- [ ] Reject graph vượt quá `request.maxTasks`.
-- [ ] Reject capability không nằm trong allowed capabilities.
-- [ ] Reject capability không có worker nào đáp ứng.
-- [ ] Validate `finalTaskKey` tồn tại.
-- [ ] Bắt buộc reject nếu có task không nằm trên path dẫn tới final task.
-- [ ] Không tự âm thầm sửa graph lỗi.
-- [ ] Trả validation error đủ rõ để lưu vào event/UI nhưng không lộ secret.
-- [ ] Planner admission/runtime failure trả typed failure để core emit
+- [x] Yêu cầu JSON only, không Markdown.
+- [x] Strip một JSON Markdown fence nếu model vẫn trả fence.
+- [x] Parse bằng `JSON.parse`.
+- [x] Validate shape/length bằng Zod.
+- [x] Reject duplicate task key.
+- [x] Reject missing dependency.
+- [x] Reject self-dependency.
+- [x] Detect cycle bằng deterministic graph algorithm.
+- [x] Reject graph vượt quá `request.maxTasks`.
+- [x] Reject capability không nằm trong allowed capabilities.
+- [x] Reject capability không có worker nào đáp ứng.
+- [x] Validate `finalTaskKey` tồn tại.
+- [x] Bắt buộc reject nếu có task không nằm trên path dẫn tới final task.
+- [x] Không tự âm thầm sửa graph lỗi.
+- [x] Trả validation error đủ rõ để lưu vào event/UI nhưng không lộ secret.
+- [x] Planner admission/runtime failure trả typed failure để core emit
   `plan_failed`; Planner timeout trả typed failure để emit `plan_timed_out`.
-- [ ] Dùng `request.timeoutMs` và best-effort cancel đúng Planner AgentRun khi
+- [x] Dùng `request.timeoutMs` và best-effort cancel đúng Planner AgentRun khi
   timeout.
-- [ ] Sau admission, await `request.registerAgentRun(run.id)`; nếu parent đã
+- [x] Sau admission, await `request.registerAgentRun(run.id)`; nếu parent đã
   stop thì cancel Run và không parse/commit Planner output.
-- [ ] Không retry Planner trong MVP.
+- [x] Không retry Planner trong MVP.
 
 ## Planner service boundary
 
@@ -100,21 +100,21 @@ Tests inject fake `AgentExecutionGateway` trả discriminated
 
 ## Automated tests
 
-- [ ] Valid DAG parse thành công.
-- [ ] Markdown-fenced JSON được parse.
-- [ ] Text không phải JSON bị reject.
-- [ ] Duplicate key bị reject.
-- [ ] Missing dependency bị reject.
-- [ ] Self-dependency bị reject.
-- [ ] Cycle hai node và nhiều node bị reject.
-- [ ] Graph quá lớn bị reject.
-- [ ] Orphan task không dẫn tới final task bị reject.
-- [ ] Unknown capability bị reject.
-- [ ] Missing final task bị reject.
-- [ ] Planner failure không tạo task nửa chừng.
-- [ ] Planner timeout không tạo task nửa chừng.
-- [ ] Stop/admission race làm registration trả false và Planner Run bị cancel.
-- [ ] Busy/not-configured Gateway result map thành typed `plan_failed`.
+- [x] Valid DAG parse thành công.
+- [x] Markdown-fenced JSON được parse.
+- [x] Text không phải JSON bị reject.
+- [x] Duplicate key bị reject.
+- [x] Missing dependency bị reject.
+- [x] Self-dependency bị reject.
+- [x] Cycle hai node và nhiều node bị reject.
+- [x] Graph quá lớn bị reject.
+- [x] Orphan task không dẫn tới final task bị reject.
+- [x] Unknown capability bị reject.
+- [x] Missing final task bị reject.
+- [x] Planner failure không tạo task nửa chừng.
+- [x] Planner timeout không tạo task nửa chừng.
+- [x] Stop/admission race làm registration trả false và Planner Run bị cancel.
+- [x] Busy/not-configured Gateway result map thành typed `plan_failed`.
 
 ## Definition of Done
 
