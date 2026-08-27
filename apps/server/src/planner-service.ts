@@ -13,9 +13,9 @@ import type {
   PlannerService as PlannerServiceContract,
 } from "./coordination-types.js";
 
-type CompletionOutcome =
-  | { type: "completed"; run: ManagedAgentRun }
-  | { type: "completion_failed" }
+type DeadlineOutcome<T> =
+  | { type: "resolved"; value: T }
+  | { type: "rejected" }
   | { type: "timed_out" };
 
 const admissionFailureMessages: Record<AgentStartFailureCode, string> = {
@@ -61,10 +61,17 @@ export class PlannerService implements PlannerServiceContract {
 
     const handle = startResult.handle;
     const plannerAgentRunId = handle.run.id;
-    let registered: boolean;
-    try {
-      registered = await request.registerAgentRun(plannerAgentRunId);
-    } catch {
+    const deadlineAt = Date.now() + request.timeoutMs;
+    const registration = await waitUntilDeadline(
+      request.registerAgentRun(plannerAgentRunId),
+      deadlineAt,
+    );
+    if (registration.type === "timed_out") {
+      ignoreUnexpectedCompletionFailure(handle.completion);
+      this.cancelBestEffort(plannerAgentRunId);
+      return planFailure(plannerAgentRunId, "plan_timed_out", "Planner AgentRun timed out");
+    }
+    if (registration.type === "rejected") {
       ignoreUnexpectedCompletionFailure(handle.completion);
       this.cancelBestEffort(plannerAgentRunId);
       return planFailure(
@@ -74,7 +81,7 @@ export class PlannerService implements PlannerServiceContract {
       );
     }
 
-    if (!registered) {
+    if (!registration.value) {
       ignoreUnexpectedCompletionFailure(handle.completion);
       this.cancelBestEffort(plannerAgentRunId);
       return planFailure(
@@ -84,12 +91,12 @@ export class PlannerService implements PlannerServiceContract {
       );
     }
 
-    const outcome = await waitForCompletion(handle.completion, request.timeoutMs);
+    const outcome = await waitUntilDeadline(handle.completion, deadlineAt);
     if (outcome.type === "timed_out") {
       this.cancelBestEffort(plannerAgentRunId);
       return planFailure(plannerAgentRunId, "plan_timed_out", "Planner AgentRun timed out");
     }
-    if (outcome.type === "completion_failed") {
+    if (outcome.type === "rejected") {
       this.cancelBestEffort(plannerAgentRunId);
       return planFailure(
         plannerAgentRunId,
@@ -98,7 +105,7 @@ export class PlannerService implements PlannerServiceContract {
       );
     }
 
-    const completedRun = outcome.run;
+    const completedRun = outcome.value;
     if (completedRun.id !== plannerAgentRunId) {
       this.cancelBestEffort(plannerAgentRunId);
       return planFailure(
@@ -166,21 +173,24 @@ function planFailure(
   return { ok: false, plannerAgentRunId, code, error };
 }
 
-async function waitForCompletion(
-  completion: Promise<ManagedAgentRun>,
-  timeoutMs: number,
-): Promise<CompletionOutcome> {
+async function waitUntilDeadline<T>(
+  promise: Promise<T>,
+  deadlineAt: number,
+): Promise<DeadlineOutcome<T>> {
   let timeout: NodeJS.Timeout | undefined;
-  const timeoutResult = new Promise<CompletionOutcome>((resolve) => {
-    timeout = setTimeout(() => resolve({ type: "timed_out" }), timeoutMs);
+  const timeoutResult = new Promise<DeadlineOutcome<T>>((resolve) => {
+    timeout = setTimeout(
+      () => resolve({ type: "timed_out" }),
+      Math.max(0, deadlineAt - Date.now()),
+    );
   });
-  const completionResult = completion.then<CompletionOutcome, CompletionOutcome>(
-    (run) => ({ type: "completed", run }),
-    () => ({ type: "completion_failed" }),
+  const settledResult = promise.then<DeadlineOutcome<T>, DeadlineOutcome<T>>(
+    (value) => ({ type: "resolved", value }),
+    () => ({ type: "rejected" }),
   );
 
   try {
-    return await Promise.race([completionResult, timeoutResult]);
+    return await Promise.race([settledResult, timeoutResult]);
   } finally {
     if (timeout) clearTimeout(timeout);
   }
