@@ -33,6 +33,7 @@ export type CoordinationEventType =
   | "plan_rejected"
   | "plan_failed"
   | "plan_timed_out"
+  | "worker_created"
   | "task_ready"
   | "attempt_dispatch_rejected"
   | "attempt_dispatch_failed"
@@ -73,6 +74,9 @@ export const DEFAULT_COORDINATION_POLICY: Readonly<CoordinationPolicy> = {
   maxDependencyContextBytes: 30_000,
 };
 
+export const GENERAL_WORKER_INSTRUCTIONS =
+  "Complete only the task in the current message. Do not assume prior context. Return a concise final result.";
+
 export interface CoordinationRun {
   id: string;
   status: CoordinationRunStatus;
@@ -97,7 +101,6 @@ export interface CoordinationTask {
   instruction: string;
   expectedOutput: string;
   dependsOn: string[];
-  requiredCapability: string;
   status: CoordinationTaskStatus;
   attemptCount: number;
   currentAttemptId: string | null;
@@ -144,7 +147,6 @@ export interface CoordinationEvent {
 export interface CreateCoordinationRunInput {
   prompt: string;
   plannerAgentId: string;
-  workerAgentIds: string[];
 }
 
 export interface CreateCoordinationRunResponse {
@@ -172,12 +174,30 @@ export interface CoordinationRunSnapshot {
   latestSequence: number;
 }
 
+export interface WorkerDependencyOutput {
+  taskKey: string;
+  output: string;
+}
+
+export interface WorkerTaskMessageInput {
+  originalGoal: string;
+  currentTask: Pick<
+    CoordinationTask,
+    "key" | "title" | "instruction" | "dependsOn" | "expectedOutput"
+  >;
+  dependencyOutputs: WorkerDependencyOutput[];
+  maxDependencyContextBytes: number;
+}
+
+export type BuildWorkerTaskMessage = (
+  input: WorkerTaskMessageInput,
+) => string;
+
 export interface PlannerTaskDraft {
   key: string;
   title: string;
   instruction: string;
   dependsOn: string[];
-  requiredCapability: string;
   expectedOutput: string;
 }
 
@@ -194,7 +214,6 @@ export interface PlannerRequest {
   coordinationRunId: string;
   plannerAgentId: string;
   userPrompt: string;
-  availableCapabilities: string[];
   maxTasks: number;
   timeoutMs: number;
   registerAgentRun(plannerAgentRunId: string): Promise<boolean>;
@@ -274,6 +293,10 @@ export interface AgentExecutionGateway {
   cancel(runId: string): Promise<void>;
 }
 
+export interface GeneralWorkerProvisioner {
+  createWorkers(coordinationRunId: string, count: number): Promise<Agent[]>;
+}
+
 export interface AttemptFaultContext {
   coordinationRunId: string;
   taskId: string;
@@ -281,7 +304,7 @@ export interface AttemptFaultContext {
   attemptId: string;
   attemptNumber: number;
   agentId: string;
-  capableAgentIds: string[];
+  workerAgentIds: string[];
 }
 
 export interface AttemptFaultDecision {
@@ -295,11 +318,9 @@ export interface CoordinationFaultPolicy {
   decide(context: AttemptFaultContext): AttemptFaultDecision | null;
 }
 
-export type CoordinatedAgent = Agent & { capabilities: string[] };
-
 export interface DatabaseV2 {
   version: 2;
-  agents: CoordinatedAgent[];
+  agents: Agent[];
   messages: Message[];
   runs: ManagedAgentRun[];
   coordinationRuns: CoordinationRun[];
@@ -329,6 +350,7 @@ export interface CoordinationServiceDependencies {
   repository: CoordinationRepository;
   plannerService: PlannerService;
   executionGateway: AgentExecutionGateway;
+  workerProvisioner: GeneralWorkerProvisioner;
   policy: CoordinationPolicy;
   faultPolicy?: CoordinationFaultPolicy;
 }

@@ -37,7 +37,6 @@ apps/server/src/planner-service.test.ts
       "title": "Research approach A",
       "instruction": "Analyze benefits, risks and limitations.",
       "dependsOn": [],
-      "requiredCapability": "research",
       "expectedOutput": "Concise analysis"
     },
     {
@@ -45,7 +44,6 @@ apps/server/src/planner-service.test.ts
       "title": "Produce recommendation",
       "instruction": "Compare the dependency results.",
       "dependsOn": ["research-a"],
-      "requiredCapability": "synthesis",
       "expectedOutput": "Final recommendation"
     }
   ],
@@ -53,25 +51,24 @@ apps/server/src/planner-service.test.ts
 }
 ```
 
-Planner chỉ đề xuất graph. Planner không được quyết định Agent ID, attempt,
-timeout, retry policy hoặc task status.
+Planner chỉ đề xuất graph. Planner không được quyết định Agent ID, role/tag,
+attempt, timeout, retry policy hoặc task status. Nếu task cần một cách làm cụ
+thể, Planner ghi thẳng yêu cầu đó bằng ngôn ngữ tự nhiên trong `instruction`.
 
 ## Checklist implementation
 
 - [ ] Build Planner prompt từ original user goal.
-- [ ] Đưa allowed capabilities và `request.maxTasks` vào prompt (default policy
-  hiện tại là 6; không hard-code trong validator).
+- [ ] Đưa `request.maxTasks` vào prompt (default policy hiện tại là 6; không
+  hard-code trong validator).
 - [ ] Yêu cầu JSON only, không Markdown.
 - [ ] Strip một JSON Markdown fence nếu model vẫn trả fence.
 - [ ] Parse bằng `JSON.parse`.
-- [ ] Validate shape/length bằng Zod.
+- [ ] Validate shape/length bằng Zod strict schema; field lạ cũng bị reject.
 - [ ] Reject duplicate task key.
 - [ ] Reject missing dependency.
 - [ ] Reject self-dependency.
 - [ ] Detect cycle bằng deterministic graph algorithm.
 - [ ] Reject graph vượt quá `request.maxTasks`.
-- [ ] Reject capability không nằm trong allowed capabilities.
-- [ ] Reject capability không có worker nào đáp ứng.
 - [ ] Validate `finalTaskKey` tồn tại.
 - [ ] Bắt buộc reject nếu có task không nằm trên path dẫn tới final task.
 - [ ] Không tự âm thầm sửa graph lỗi.
@@ -83,6 +80,10 @@ timeout, retry policy hoặc task status.
 - [ ] Sau admission, await `request.registerAgentRun(run.id)`; nếu parent đã
   stop thì cancel Run và không parse/commit Planner output.
 - [ ] Không retry Planner trong MVP.
+- [ ] Export pure helper `buildWorkerTaskMessage: BuildWorkerTaskMessage` trong
+  `coordination-prompts.ts`. Task 01 truyền original goal, task hiện tại,
+  dependency outputs và context byte limit; helper serialize theo Worker prompt
+  contract.
 
 ## Planner service boundary
 
@@ -109,7 +110,7 @@ Tests inject fake `AgentExecutionGateway` trả discriminated
 - [ ] Cycle hai node và nhiều node bị reject.
 - [ ] Graph quá lớn bị reject.
 - [ ] Orphan task không dẫn tới final task bị reject.
-- [ ] Unknown capability bị reject.
+- [ ] Planner JSON có field ngoài schema bị reject.
 - [ ] Missing final task bị reject.
 - [ ] Planner failure không tạo task nửa chừng.
 - [ ] Planner timeout không tạo task nửa chừng.
@@ -121,6 +122,8 @@ Tests inject fake `AgentExecutionGateway` trả discriminated
 - Cùng một JSON input luôn cho cùng validation result.
 - Planner output không thể bypass backend validator.
 - Module không biết hoặc chọn Worker Agent ID.
+- Worker message chứa đủ task-specific instruction và dependency data; không
+  dựa vào instruction/role riêng của từng Worker.
 - Có tests cho positive và negative cases.
 - `npm run check` pass.
 

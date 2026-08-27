@@ -50,18 +50,16 @@ Create input:
 ```json
 {
   "prompt": "Compare two approaches and recommend one",
-  "plannerAgentId": "uuid",
-  "workerAgentIds": ["uuid-a", "uuid-b", "uuid-c"]
+  "plannerAgentId": "uuid"
 }
 ```
 
 Create trả HTTP `202` với Coordination Run trạng thái `planning`.
 Stop trả HTTP `200` với full `StopCoordinationRunResponse`; không tự rút gọn DTO.
 
-Task 05 mở rộng Zod bodies của existing Agent create/update routes để nhận
-optional `capabilities: string[]` đúng §4 contract và chuyển nguyên payload vào
-AgentService của Task 03. Normalize/validate capability semantics vẫn thuộc Task
-03; route không tự viết rule thứ hai.
+Task 05 chỉ wire `GeneralWorkerProvisioner` implementation của Task 03 vào
+`CoordinationService`; route không tự tạo Worker và không nhận Worker config từ
+frontend.
 
 Detail response phải cung cấp một snapshot nhất quán:
 
@@ -90,6 +88,7 @@ Detail response phải cung cấp một snapshot nhất quán:
 - [ ] Event history có giới hạn; không lưu raw Codex stdout.
 - [ ] Không lưu credential hoặc environment value.
 - [ ] Inject Task 01 `CoordinationAgentGuard` vào AgentService.
+- [ ] Inject Task 03 `GeneralWorkerProvisioner` vào CoordinationService.
 - [ ] Sau Database v2 migration, update/start gọi guard trong store mutation;
   stop/delete reserve `stopped` trong guarded mutation trước cancel/archive.
 - [ ] Public Playground admission gọi `assertMutable()` trong cùng mutation tạo
@@ -119,7 +118,7 @@ Yêu cầu:
   invalidate Attempt trực tiếp từ route/test fixture.
 - [ ] Return a safe decision/reason; Task 01 atomically emit
   `demo_fault_injected` khi policy trả decision khác `null`.
-- [ ] Task bị inject có ít nhất hai capable Workers và retry chọn Agent khác.
+- [ ] Default run đã tự tạo hai General Workers và retry chọn Agent khác.
 - [ ] Fixture có thể không cancel old Run để chứng minh late result bị reject.
 - [ ] Không tạo hard-coded successful output.
 - [ ] Retry Worker vẫn gọi real Agent qua Starter Kit.
@@ -132,15 +131,17 @@ Yêu cầu:
 ## Integration tests
 
 - [ ] HTTP create Coordination Run trả `202`.
-- [ ] Create trả trước khi Planner/Workers hoàn tất.
+- [ ] Create trả trước khi Planner hoàn tất và trước khi Worker được tạo/chạy.
 - [ ] Active Coordination Run thứ hai bị reject `409`.
-- [ ] Invalid Agent IDs bị reject.
+- [ ] Invalid Planner Agent ID bị reject.
 - [ ] Detail/stop unknown Coordination Run trả `404`, không rơi thành `500`.
-- [ ] Planner hoặc Worker không `ready` bị reject `409` khi create.
-- [ ] Không đủ Workers bị reject.
-- [ ] Hơn 8 Workers, duplicate Worker IDs hoặc Planner nằm trong Worker IDs bị
-  reject.
+- [ ] Planner không `ready` bị reject `409` khi create.
+- [ ] Create body có field ngoài `{ prompt, plannerAgentId }` bị reject.
 - [ ] Valid Planner output tạo persisted DAG.
+- [ ] Sau plan validation, backend tạo đúng hai General Workers, persist hai ID
+  unique vào run và emit hai `worker_created` events.
+- [ ] Worker dùng đúng generic instruction; task title/instruction/dependency chỉ
+  xuất hiện trong per-task message.
 - [ ] Hai ready tasks chạy song song với fake gateway.
 - [ ] Timeout requeue và tạo attempt 2.
 - [ ] Old attempt completion tạo stale event.
@@ -163,24 +164,21 @@ Yêu cầu:
   `plannerAgentRunId`, `completedAt`, safe `error` và reason.
 - [ ] Existing `/api/agents` và Playground API tests vẫn pass với Agent không
   thuộc active Coordination Run.
-- [ ] Playground message tới selected Planner/Worker trong active run trả `409`,
-  không tạo Message/AgentRun. Ít nhất một case dùng selected Worker vẫn `ready`
-  trong lúc `planning` để chứng minh coordination guard, không pass nhờ busy
-  check cũ.
+- [ ] Playground message tới Planner hoặc auto-created Worker trong active run
+  trả `409`, không tạo Message/AgentRun. Ít nhất một case dùng Worker vẫn `ready`
+  để chứng minh coordination guard, không pass nhờ busy check cũ.
 - [ ] Playground của Agent không tham gia run vẫn nhận `202`, và managed
   Planner/Worker của chính run vẫn start được.
 - [ ] Race giữa Playground admission và `createRun()` chỉ cho đúng một bên
-  reserve Agent; dùng barrier/fake để test riêng cả hai thứ tự commit. Playground
+  reserve Planner; dùng barrier/fake để test riêng cả hai thứ tự commit. Playground
   thắng thì không có Coordination Run; create thắng thì không có Playground
   Message/AgentRun.
 - [ ] Sau Coordination Run `completed | failed | cancelled`, coordination guard
   không còn reject. Test await fake managed completion/cleanup; khi Agent đã
   `ready` thì Playground nhận `202`. Nếu old Run còn giữ Agent `busy`, ordinary
   busy conflict vẫn đúng và không được hiểu nhầm là guard chưa nhả.
-- [ ] Agent create/update API round-trip normalized capabilities.
-- [ ] Update capabilities/stop/delete selected Agent trong active run bị reject.
 - [ ] Concurrent createRun với update/stop/delete không persist run tham chiếu
-  Agent đã bị mutate/xóa.
+  Planner đã bị mutate/xóa.
 - [ ] Non-busy Gateway admission failure không để Attempt `dispatching` sau
   request/tick.
 - [ ] Với event history chưa bị truncate, `sequence` liên tục từ `1..N` và
@@ -196,7 +194,7 @@ README cuối cùng cần có:
 - Required env: `ARK_API_KEY`, `ARK_MODEL`, optional `ARK_BASE_URL`.
 - Optional non-secret demo flag `COORDINATION_DEMO_FAULT`; default/off behavior.
 - One-command local startup.
-- Agent/capability setup cho demo.
+- Planner setup cho demo; General Workers được backend tự tạo.
 - Automated test command.
 - Three-minute demo steps.
 - Failure/recovery evidence.
@@ -222,7 +220,7 @@ React UI
 
 - [ ] Trước khi tạo Coordination Run, chạy một prompt ngắn trong existing
   single-Agent Playground để chứng minh Starter Kit baseline vẫn hoạt động.
-- [ ] Chọn hoặc tạo Planner và Workers.
+- [ ] Chọn hoặc tạo Planner; không tạo/chọn Worker bằng tay.
 - [ ] Gửi một goal thật từ UI.
 - [ ] Planner thật đề xuất DAG.
 - [ ] Hai tasks chạy song song.
@@ -232,6 +230,7 @@ React UI
 - [ ] Downstream task được unlock.
 - [ ] Final output hiển thị.
 - [ ] Event history chứng minh toàn bộ flow.
+- [ ] UI cho thấy hai `worker_created` events và Worker IDs do backend cấp.
 - [ ] Hai `attempt_started` đầu xuất hiện trước khi một trong hai nhánh kết thúc;
   final task chỉ mở khóa sau khi cả hai task cha completed. Không đọc demo theo
   một danh sách số thứ tự cố định giữa hai nhánh song song.
@@ -247,6 +246,8 @@ fake-gateway test là bằng chứng xác định rằng output cũ không thể
 - `npm run check` pass.
 - Demo không cần sửa DB hoặc code bằng tay.
 - Không có hidden manual step ngoài documented credentials/runtime setup.
+- README ghi rõ General Worker records được giữ lại sau run trong MVP để audit;
+  chưa có cleanup/reuse policy.
 - Tất cả AI calls vẫn đi qua Starter Kit.
 
 ## Ngoài scope

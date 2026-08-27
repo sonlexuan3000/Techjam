@@ -10,8 +10,8 @@
 ## Mục tiêu
 
 Xây state machine trung tâm điều phối DAG. Module này nhận một plan đã validate,
-quản lý task state, ready queue, giới hạn parallelism, capability matching và
-mở khóa downstream task.
+gọi port của Task 03 để tạo General Workers, quản lý task state, ready queue,
+giới hạn parallelism và mở khóa downstream task.
 
 Module không gọi ModelArk trực tiếp. Mọi Planner/Worker Run phải đi qua interface
 do Task 03 cung cấp.
@@ -70,16 +70,28 @@ type SchedulerMutableTaskFields = Pick<
   khi parent còn `planning`, để stop/admission race cancel đúng Run.
 - [ ] Chỉ apply PlannerResult nếu parent vẫn `planning`; late result sau stop
   không được tạo DAG hoặc đổi terminal status.
+- [ ] Sau khi toàn bộ plan validate thành công, gọi `GeneralWorkerProvisioner`
+  để tạo đúng `policy.maxParallelism` Worker mới (mặc định hai) cho run.
+- [ ] Persist các Worker ID do backend tạo vào `run.workerAgentIds` và emit một
+  `worker_created` cho mỗi Worker trước khi task đầu tiên được dispatch.
+- [ ] Nếu tạo Worker lỗi hoặc kết quả không đủ/không unique/không `ready`, fail
+  run với reason `worker_provision_failed`; không để task hoặc Attempt chạy nửa
+  chừng.
+- [ ] Sau provision, recheck parent vẫn `planning` trước khi attach Worker IDs và
+  tạo DAG; nếu user đã Stop thì bỏ qua late result.
+- [ ] Attach Worker IDs, tạo toàn bộ task và chuyển run sang `running` trong cùng
+  một repository mutation.
 - [ ] Khi khởi động lại, mọi run còn `planning` được atomically chuyển thành
   `failed`, emit `plan_failed` rồi `coordination_failed` với reason
   `server_restart_during_planning`, không gọi lại Planner, không tạo task và
-  không còn giữ Planner/Workers.
+  không còn giữ Planner hoặc Worker đã attach.
 - [ ] Tạo task không dependency ở trạng thái `ready`.
 - [ ] Tạo task có dependency ở trạng thái `blocked`.
 - [ ] Tìm ready tasks theo thứ tự deterministic.
 - [ ] Giới hạn tối đa hai task chạy song song.
 - [ ] Không giao hai task đồng thời cho cùng một Agent.
-- [ ] Chỉ chọn Agent `ready` có capability phù hợp.
+- [ ] Chỉ chọn Agent `ready` nằm trong `run.workerAgentIds`; không phân loại role
+  hoặc matching bằng tag.
 - [ ] `createRun()` và Playground admission cùng serialize qua store mutation:
   bên reserve Agent trước thắng, bên còn lại nhận `409`.
 - [ ] Gateway `busy` xóa provisional Attempt; không giữ hai Attempt cùng
@@ -96,7 +108,7 @@ type SchedulerMutableTaskFields = Pick<
 - [ ] Late completion emit `stale_result_rejected` và không ghi task output.
 - [ ] `maxAttempts = 2`; không retry vô hạn.
 - [ ] Runtime failure đưa task về ready nếu còn attempt; cho phép dùng lại cùng
-  capable Agent khi pool chỉ có một Agent.
+  Worker nếu chưa có Worker khác rảnh.
 - [ ] Worker failure atomically mark Attempt failed, clear reservation và emit
   `attempt_failed` trước khi requeue hoặc terminal failure.
 - [ ] Reconciliation tick đánh thức ready task khi Agent rảnh trở lại.
@@ -111,8 +123,8 @@ type SchedulerMutableTaskFields = Pick<
   non-terminal run trên `DatabaseV2` được truyền vào; Task 05 gọi
   `assertMutable()` bên trong cùng store mutation của Agent
   lifecycle/Playground admission.
-- [ ] `createRun()` atomically validate Agent eligibility/active-run conflict và
-  persist run để serialize với lifecycle reservation.
+- [ ] `createRun()` atomically validate Planner/active-run conflict và persist
+  run với `workerAgentIds: []`; frontend không được truyền Worker ID.
 - [ ] Public service methods throw existing `HttpError` với `404/409` semantics
   đúng contract; không throw plain Error cho expected domain conflicts.
 - [ ] Gọi optional `CoordinationFaultPolicy` sau admission; core không hard-code
@@ -124,6 +136,7 @@ type SchedulerMutableTaskFields = Pick<
   invalid phải fall back về timeout bình thường, không rollback attach mutation,
   không để Attempt `dispatching` hay AgentRun mồ côi.
 - [ ] Không gọi `AgentService` bên trong `JsonStore.mutate()`.
+- [ ] Không gọi `GeneralWorkerProvisioner` bên trong `JsonStore.mutate()`.
 
 ## Event tối thiểu
 
@@ -135,6 +148,7 @@ plan_validated
 plan_rejected
 plan_failed
 plan_timed_out
+worker_created
 task_ready
 attempt_dispatch_rejected
 attempt_dispatch_failed
@@ -170,13 +184,14 @@ demo_fault_injected
 - [ ] Restart khi run còn `planning`, cả trường hợp chưa/có
   `plannerAgentRunId`, làm run fail; không dispatch Planner, không tạo task, có
   đúng một `plan_failed` và một `coordination_failed`, rồi create mới dùng lại
-  đúng Planner/Workers thành công.
+  đúng Planner thành công.
 - [ ] Gọi `initialize()` lần hai không tạo thêm failure event; test giữ nguyên
   `plannerAgentRunId` và kiểm tra `completedAt`, safe `error`,
   `details.reason` đúng contract.
 - [ ] Non-busy admission failure/throw không để task hoặc Attempt bị kẹt.
 - [ ] Timeout requeue tạo attempt ID mới.
-- [ ] Retry ưu tiên capable Agent chưa chạy task đó.
+- [ ] Retry ưu tiên Worker chưa chạy task đó; nếu chưa có Worker khác rảnh thì
+  task ở `ready` và reconciliation tick thử lại.
 - [ ] Late output của attempt cũ bị reject.
 - [ ] Completion sau parent run cancelled bị reject.
 - [ ] Attempt hiện hành completed được accept.
@@ -184,10 +199,14 @@ demo_fault_injected
 - [ ] `maxParallelism = 2` được giữ.
 - [ ] Final output lấy từ đúng final task.
 - [ ] Permanent failure làm downstream skipped.
-- [ ] Mọi capable Agent đều `stopped`/`error`/missing làm run fail thay vì chờ
-  vô hạn.
+- [ ] Mọi Worker của run đều `stopped`/`error`/missing làm run fail với
+  `no_worker_available` thay vì chờ vô hạn.
 - [ ] Run failure cancel active sibling và reject completion đến sau đó.
-- [ ] Một capable Worker vẫn retry được sau managed AgentRun failure.
+- [ ] Worker cũ vẫn có thể được dùng lại sau managed AgentRun failure nếu đã về
+  `ready` và chưa có Worker khác rảnh.
+- [ ] Plan hợp lệ tự tạo đúng hai General Workers ở default policy; user không
+  cần tạo/chọn Worker hoặc cấu hình role trước.
+- [ ] Provisioner failure không tạo task/Attempt nửa chừng; run kết thúc `failed`.
 - [ ] Stop atomically cancel unfinished tasks và late result không commit.
 - [ ] Fault policy absent giữ production timeout; injected policy chỉ override
   attempt được chọn.
@@ -204,7 +223,8 @@ demo_fault_injected
   `[1, 2, ..., N]`; test lọc theo `taskId`/`attemptId` để phân biệt task B với
   attempt B2.
 
-Tests dùng fake Planner plan và fake Agent execution gateway; không gọi Ark thật.
+Tests dùng fake Planner plan, fake `GeneralWorkerProvisioner` và fake Agent
+execution gateway; không gọi Ark thật.
 
 ## Definition of Done
 

@@ -9,8 +9,9 @@
 
 ## Mục tiêu
 
-Thêm một Coordination view nhỏ vào React app hiện có để user chọn Planner,
-Workers, nhập goal, launch một Coordination Run và quan sát graph/status/events.
+Thêm một Coordination view nhỏ vào React app hiện có để user chọn Planner, nhập
+goal, launch một Coordination Run và quan sát graph/status/events. Worker do
+backend tự tạo; user không phải cấu hình pool trước.
 
 Toàn bộ scheduling phải nằm ở backend. Frontend chỉ gửi command và poll một
 coordination snapshot.
@@ -37,16 +38,12 @@ leader trước khi refactor phần single-Agent Playground.
 
 ## Launch form
 
-- [ ] Mở rộng existing create/settings Agent form bằng capabilities input và gửi
-  optional `capabilities: string[]` qua existing Agent API.
 - [ ] User goal/prompt textarea.
 - [ ] Planner Agent dropdown.
-- [ ] Worker Agent checklist.
-- [ ] Hiển thị capability badges.
-- [ ] Chỉ cho chọn Planner/Workers đang `ready`; Agent `busy`, `error` hoặc
-  `stopped` không selectable.
-- [ ] Validate có đúng một Planner, `2–8` unique Workers và Planner không nằm
-  trong Worker IDs (backend vẫn validate lại).
+- [ ] Chỉ cho chọn Planner đang `ready`; Agent `busy`, `error` hoặc `stopped`
+  không selectable.
+- [ ] Create request chỉ gửi `{ prompt, plannerAgentId }`; không gửi Worker ID,
+  role/tag hoặc permanent instruction.
 - [ ] Nút `Launch coordinated run`.
 - [ ] Hiển thị API/validation error rõ ràng.
 
@@ -71,7 +68,6 @@ Mỗi task card cần có:
 ```text
 Title
 Dependencies
-Required capability
 Status
 Assigned Agent
 Attempt number
@@ -121,6 +117,7 @@ Hiển thị theo `sequence`, không chỉ timestamp:
 plan_requested
 plan_validated
 plan_failed / plan_timed_out
+worker_created
 task_ready
 attempt_started
 attempt_timed_out
@@ -133,6 +130,8 @@ coordination_completed
 ```
 
 Event nên hiển thị task, attempt và Agent liên quan nếu có.
+Worker do backend tạo được hiển thị read-only từ `workerAgentIds` và event
+`worker_created`; frontend không tự tạo hoặc assign Worker.
 `EventTimeline` phải render được toàn bộ `CoordinationEventType` union trong
 shared contract. Event chưa có presentation riêng phải dùng generic fallback
 (`type + message`), không crash hoặc render rỗng; đặc biệt cover plan reject/fail,
@@ -177,6 +176,7 @@ Xóa hoặc cô lập fixture khỏi production path trước khi merge.
   `npm run test --workspaces --if-present`; `npm run check` thật sự chạy polling
   test mới, không dựa vào dependency được hoist tình cờ từ server.
 - [ ] Coordination UI không chứa scheduling logic.
+- [ ] Test create payload chứng minh không có Worker IDs hoặc cấu hình Worker.
 - [ ] Empty/loading/error/terminal states đều dễ hiểu.
 - [ ] Desktop hai cột graph/timeline.
 - [ ] Mobile hoặc cửa sổ nhỏ vẫn sử dụng được theo một cột.

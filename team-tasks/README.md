@@ -22,7 +22,8 @@ User prompt
 → Planner Agent qua AgentService/AgentRunner có sẵn
 → Planner đề xuất JSON dependency graph
 → Backend validate graph
-→ Ready queue + capability matching
+→ Backend tự tạo General Workers
+→ Ready queue + giao task cho Worker đang rảnh
 → Worker Agent execution
 → Attempt + timeout + retry/reassignment
 → currentAttemptId từ chối kết quả cũ
@@ -37,6 +38,16 @@ maxParallelism = 2
 maxAttempts    = 2
 ```
 
+User chỉ nhập prompt và chọn một Planner. Sau khi plan hợp lệ, backend tự tạo
+đúng `maxParallelism` General Workers mới cho run (mặc định là hai); user không
+phải tạo hoặc chọn Worker trước. Tất cả Worker dùng cùng một instruction chung,
+còn nội dung/role cụ thể của mỗi task chỉ nằm trong message được gửi khi chạy
+task. `workerAgentIds` là dữ liệu backend tự điền để retry, audit và hiển thị UI,
+không phải input từ frontend.
+
+Mỗi Planner/Worker execution của Coordination dùng Codex session mới; không nối
+chat cũ và không ghi đè session của single-Agent Playground.
+
 Không làm trong MVP: lease, heartbeat, adaptive replanning, Evaluator Agent,
 shared filesystem, distributed queue, model routing, ECS và graph editor phức
 tạp.
@@ -47,9 +58,22 @@ tạp.
 | --- | --- | --- | --- |
 | [Task 01](./01-coordination-core.md) | Coordination core và scheduler | Chưa có | Unassigned |
 | [Task 02](./02-planner-dag-validator.md) | Planner service và DAG validator | @tlam0806 | In progress |
-| [Task 03](./03-agent-execution-attempt-retry.md) | Agent execution gateway, capabilities và Run correlation | VnhLuu25 | In progress |
+| [Task 03](./03-agent-execution-attempt-retry.md) | General Worker provisioning, execution gateway và Run correlation | VinhLuu25 | In progress |
 | [Task 04](./04-coordination-ui.md) | Coordination UI, graph và event timeline | Chưa có | Unassigned |
 | [Task 05](./05-api-persistence-testing-demo.md) | API, persistence, integration tests và demo | Chưa có | Unassigned |
+
+Ranh giới ngắn gọn để không làm trùng:
+
+- **Task 01:** quyết định lúc nào tạo Worker, giao task cho ai, timeout và retry;
+  chỉ gọi interface, không tự viết logic tạo Agent.
+- **Task 02:** biến prompt thành DAG hợp lệ và build message cụ thể cho từng
+  task; không chọn Worker.
+- **Task 03:** tạo General Workers và chạy Planner/Worker bằng Starter Kit; không
+  quyết định scheduling/retry.
+- **Task 04:** gửi prompt + Planner ID, rồi hiển thị graph/status/events; không
+  tự tạo hay assign Worker.
+- **Task 05:** nối API/store/config, viết integration tests và kịch bản demo;
+  route không chứa scheduler.
 
 Để claim một task mà không bị hai người cùng chọn:
 
