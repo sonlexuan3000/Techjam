@@ -63,7 +63,7 @@ export class PlannerService implements PlannerServiceContract {
     const plannerAgentRunId = handle.run.id;
     const deadlineAt = Date.now() + request.timeoutMs;
     const registration = await waitUntilDeadline(
-      request.registerAgentRun(plannerAgentRunId),
+      Promise.resolve().then(() => request.registerAgentRun(plannerAgentRunId)),
       deadlineAt,
     );
     if (registration.type === "timed_out") {
