@@ -84,13 +84,22 @@ Detail response phải cung cấp một snapshot nhất quán:
 - [ ] Có migration/normalization cho baseline database hiện tại.
 - [ ] Browser refresh vẫn đọc được run.
 - [ ] Server restart không để task giả ở trạng thái running.
+- [ ] Server restart khi run còn `planning` atomically fail run với safe error,
+  emit `plan_failed` rồi `coordination_failed` có reason
+  `server_restart_during_planning` và giải phóng Agent.
 - [ ] Event history có giới hạn; không lưu raw Codex stdout.
 - [ ] Không lưu credential hoặc environment value.
 - [ ] Inject Task 01 `CoordinationAgentGuard` vào AgentService.
 - [ ] Sau Database v2 migration, update/start gọi guard trong store mutation;
   stop/delete reserve `stopped` trong guarded mutation trước cancel/archive.
+- [ ] Public Playground admission gọi `assertMutable()` trong cùng mutation tạo
+  Run/Message và chuyển Agent `ready → busy`; managed
+  Planner/Worker admission không gọi guard này.
 - [ ] Verify lifecycle reservation và Task 01 create reservation serialize trên
   cùng JsonStore; không duplicate một route-only pre-check.
+- [ ] Trong `index.ts`, await theo đúng thứ tự: `AgentService.initialize()` →
+  `CoordinationService.initialize()` → tạo/listen Fastify app; route không mở
+  trước khi restart reconciliation hoàn tất.
 
 ## Controlled failure fixture
 
@@ -116,6 +125,8 @@ Yêu cầu:
 - [ ] Retry Worker vẫn gọi real Agent qua Starter Kit.
 - [ ] Có automated test với fake execution gateway; production không inject
   policy và giữ timeout mặc định.
+- [ ] Fake fault policy throw hoặc trả decision invalid không làm Attempt kẹt
+  `dispatching`, không bỏ mồ côi AgentRun và fall back về timeout bình thường.
 - [ ] README nói rõ đây là controlled fixture được dùng để tái hiện recovery.
 
 ## Integration tests
@@ -133,19 +144,47 @@ Yêu cầu:
 - [ ] Hai ready tasks chạy song song với fake gateway.
 - [ ] Timeout requeue và tạo attempt 2.
 - [ ] Old attempt completion tạo stale event.
+- [ ] Controlled-timeout test assert thứ tự theo task/attempt ID:
+  `started(B1) < fault(B1) < timed_out(B1) < requeued(B) < started(B2)`;
+  không so sánh cứng vị trí `task_completed(A)` hoặc stale event trong toàn mảng.
+- [ ] Cùng test assert `plan_validated < ready(A/B)`, cả `started(A1)` và
+  `started(B1)` đứng trước event kết thúc đầu tiên, và cả hai task cha completed
+  trước khi final task được mở khóa.
 - [ ] Stop atomically cancel run/active attempts/unfinished tasks; late
   completion sau stop không commit.
 - [ ] Final task unlock và complete run.
 - [ ] Max attempts tạo failed run.
 - [ ] Failed run không persist sibling task/Attempt ở trạng thái `running`.
 - [ ] List/detail API trả dữ liệu đúng sau refresh/reinitialize.
-- [ ] Existing `/api/agents` và Playground API tests vẫn pass.
+- [ ] Restart trong lúc `planning`, trước hoặc sau khi lưu `plannerAgentRunId`,
+  làm run fail, không tạo task, persist đúng hai failure events; create mới với
+  cùng Agent không còn bị `409`.
+- [ ] Reinitialize lần hai là idempotent: không nhân đôi failure event, giữ
+  `plannerAgentRunId`, `completedAt`, safe `error` và reason.
+- [ ] Existing `/api/agents` và Playground API tests vẫn pass với Agent không
+  thuộc active Coordination Run.
+- [ ] Playground message tới selected Planner/Worker trong active run trả `409`,
+  không tạo Message/AgentRun. Ít nhất một case dùng selected Worker vẫn `ready`
+  trong lúc `planning` để chứng minh coordination guard, không pass nhờ busy
+  check cũ.
+- [ ] Playground của Agent không tham gia run vẫn nhận `202`, và managed
+  Planner/Worker của chính run vẫn start được.
+- [ ] Race giữa Playground admission và `createRun()` chỉ cho đúng một bên
+  reserve Agent; dùng barrier/fake để test riêng cả hai thứ tự commit. Playground
+  thắng thì không có Coordination Run; create thắng thì không có Playground
+  Message/AgentRun.
+- [ ] Sau Coordination Run `completed | failed | cancelled`, coordination guard
+  không còn reject. Test await fake managed completion/cleanup; khi Agent đã
+  `ready` thì Playground nhận `202`. Nếu old Run còn giữ Agent `busy`, ordinary
+  busy conflict vẫn đúng và không được hiểu nhầm là guard chưa nhả.
 - [ ] Agent create/update API round-trip normalized capabilities.
 - [ ] Update capabilities/stop/delete selected Agent trong active run bị reject.
 - [ ] Concurrent createRun với update/stop/delete không persist run tham chiếu
   Agent đã bị mutate/xóa.
 - [ ] Non-busy Gateway admission failure không để Attempt `dispatching` sau
   request/tick.
+- [ ] Với event history chưa bị truncate, `sequence` liên tục từ `1..N` và
+  `latestSequence === events.at(-1)?.sequence`.
 
 ## Submission documentation
 
@@ -161,6 +200,8 @@ README cuối cùng cần có:
 - Automated test command.
 - Three-minute demo steps.
 - Failure/recovery evidence.
+- Event demo được giải thích theo quan hệ trước/sau giữa đúng task/attempt ID,
+  không dùng danh sách số thứ tự toàn cục cố định; stale event có thể đến muộn.
 - Known limitations.
 - Không chứa secret hoặc screenshot có key.
 
@@ -179,8 +220,8 @@ React UI
 
 ## Three-minute demo acceptance
 
-- [ ] Chạy một prompt ngắn trong existing single-Agent Playground để chứng minh
-  Starter Kit baseline vẫn hoạt động.
+- [ ] Trước khi tạo Coordination Run, chạy một prompt ngắn trong existing
+  single-Agent Playground để chứng minh Starter Kit baseline vẫn hoạt động.
 - [ ] Chọn hoặc tạo Planner và Workers.
 - [ ] Gửi một goal thật từ UI.
 - [ ] Planner thật đề xuất DAG.
@@ -191,7 +232,14 @@ React UI
 - [ ] Downstream task được unlock.
 - [ ] Final output hiển thị.
 - [ ] Event history chứng minh toàn bộ flow.
+- [ ] Hai `attempt_started` đầu xuất hiện trước khi một trong hai nhánh kết thúc;
+  final task chỉ mở khóa sau khi cả hai task cha completed. Không đọc demo theo
+  một danh sách số thứ tự cố định giữa hai nhánh song song.
 - [ ] Platform vẫn hiểu và điều khiển được sau failure.
+
+Live ModelArk không bảo đảm old Run trả output trong đúng 10 giây terminal grace.
+Nếu event stale về muộn hơn, mở lại persisted run để cho judge xem; automated
+fake-gateway test là bằng chứng xác định rằng output cũ không thể commit.
 
 ## Definition of Done
 

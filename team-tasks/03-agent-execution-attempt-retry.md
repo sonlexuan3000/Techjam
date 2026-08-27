@@ -33,8 +33,9 @@ type AgentExecutionGateway =
   import("./coordination-types.js").AgentExecutionGateway;
 ```
 
-Public Playground API vẫn trả HTTP `202` như trước. Coordinator dùng
-`completion` nội bộ để không phải poll HTTP.
+Public Playground API vẫn trả HTTP `202` như trước với Agent không thuộc active
+Coordination Run. Sau bước tích hợp của Task 05, Agent đang được giữ cho việc
+nhóm trả `409`. Coordinator dùng `completion` nội bộ để không phải poll HTTP.
 
 `start()` trả `AgentStartResult`: `{ ok: true, handle }` hoặc
 `{ ok: false, code, error }`. Expected admission failures không throw và không
@@ -42,8 +43,11 @@ Public Playground API vẫn trả HTTP `202` như trước. Coordinator dùng
 
 ## Checklist implementation
 
-- [ ] Extract managed Run primitive từ existing `sendMessage()`.
-- [ ] Giữ nguyên behavior của single-Agent Playground.
+- [ ] Extract managed Run primitive từ existing `sendMessage()` và truyền
+  `origin` vào trước atomic admission để integration phân biệt Playground với
+  managed Planner/Worker.
+- [ ] Giữ nguyên behavior của single-Agent Playground khi Agent không được giữ
+  bởi active Coordination Run.
 - [ ] Giữ atomic one-active-Run-per-Agent admission.
 - [ ] Planner và Worker đều đi qua existing AgentService/AgentRunner.
 - [ ] Thêm Run origin/correlation metadata cho coordination.
@@ -59,7 +63,7 @@ Public Playground API vẫn trả HTTP `202` như trước. Coordinator dùng
 - [ ] Managed completion luôn trả persisted terminal AgentRun.
 - [ ] Managed coordination failure/cancel cleanup Agent về `ready`; lỗi vẫn nằm
   trên AgentRun để Task 01 quyết định retry.
-- [ ] Playground failure behavior hiện có không bị đổi.
+- [ ] Playground failure behavior hiện có không bị đổi với Run đã được nhận.
 
 ## Boundary semantics
 
@@ -67,14 +71,17 @@ Gateway chỉ quản lý lifecycle của baseline AgentRun. Coordinator quyết 
 AgentRun completion có còn là current attempt để commit task output hay không.
 Không dùng lease token hoặc heartbeat.
 
-Atomic guard cho public Agent lifecycle thuộc Task 05 sau Database v2 migration.
-Task 03 không import `CoordinationAgentGuard`/`DatabaseV2`, không đọc coordination
-arrays và không duplicate coordination state; một shared-file conflict nhỏ trong
+Atomic guard cho public Agent lifecycle và Playground admission thuộc Task 05 sau
+Database v2 migration. Task 03 phải để admission nhận biết `origin`, nhưng không
+import `CoordinationAgentGuard`/`DatabaseV2`, không đọc coordination arrays và
+không duplicate coordination state; một shared-file conflict nhỏ trong
 `agent-service.ts` khi Task 05 merge sau là chấp nhận được.
 
 ## Automated tests
 
 - [ ] Existing Playground conversation vẫn persist.
+- [ ] Normal Playground admission vẫn persist Run/Message; HTTP `202` và
+  coordination-reservation cases thuộc integration tests của Task 05.
 - [ ] Existing one-active-Run-per-Agent test vẫn pass.
 - [ ] Managed Run trả completion promise đúng terminal state.
 - [ ] Correlation metadata đúng task/attempt.

@@ -70,13 +70,18 @@ type SchedulerMutableTaskFields = Pick<
   khi parent còn `planning`, để stop/admission race cancel đúng Run.
 - [ ] Chỉ apply PlannerResult nếu parent vẫn `planning`; late result sau stop
   không được tạo DAG hoặc đổi terminal status.
+- [ ] Khi khởi động lại, mọi run còn `planning` được atomically chuyển thành
+  `failed`, emit `plan_failed` rồi `coordination_failed` với reason
+  `server_restart_during_planning`, không gọi lại Planner, không tạo task và
+  không còn giữ Planner/Workers.
 - [ ] Tạo task không dependency ở trạng thái `ready`.
 - [ ] Tạo task có dependency ở trạng thái `blocked`.
 - [ ] Tìm ready tasks theo thứ tự deterministic.
 - [ ] Giới hạn tối đa hai task chạy song song.
 - [ ] Không giao hai task đồng thời cho cùng một Agent.
 - [ ] Chỉ chọn Agent `ready` có capability phù hợp.
-- [ ] Nếu Agent vừa bị Playground chiếm, rollback dispatch và giữ task `ready`.
+- [ ] `createRun()` và Playground admission cùng serialize qua store mutation:
+  bên reserve Agent trước thắng, bên còn lại nhận `409`.
 - [ ] Gateway `busy` xóa provisional Attempt; không giữ hai Attempt cùng
   `attemptNumber`.
 - [ ] Gateway failure khác/throw luôn cleanup reservation và fail rõ ràng; không
@@ -103,14 +108,21 @@ type SchedulerMutableTaskFields = Pick<
 - [ ] `stopRun()` atomically cancel run/active attempts/unfinished tasks trước
   khi best-effort cancel AgentRuns ở ngoài mutation.
 - [ ] Export standalone `CoordinationAgentGuard` implementation kiểm tra
-  non-terminal run trên `DatabaseV2` được truyền vào; Task 05 gọi nó bên trong
-  cùng store mutation của Agent lifecycle.
+  non-terminal run trên `DatabaseV2` được truyền vào; Task 05 gọi
+  `assertMutable()` bên trong cùng store mutation của Agent
+  lifecycle/Playground admission.
 - [ ] `createRun()` atomically validate Agent eligibility/active-run conflict và
   persist run để serialize với lifecycle reservation.
 - [ ] Public service methods throw existing `HttpError` với `404/409` semantics
   đúng contract; không throw plain Error cho expected domain conflicts.
 - [ ] Gọi optional `CoordinationFaultPolicy` sau admission; core không hard-code
   tên demo mode hoặc task bị fault.
+- [ ] Khi fault policy trả decision, emit `attempt_started` rồi
+  `demo_fault_injected` trong cùng mutation attach Attempt; chỉ arm timeout sau
+  khi mutation commit.
+- [ ] Catch/validate fault-policy result ở runtime; hook throw hoặc decision
+  invalid phải fall back về timeout bình thường, không rollback attach mutation,
+  không để Attempt `dispatching` hay AgentRun mồ côi.
 - [ ] Không gọi `AgentService` bên trong `JsonStore.mutate()`.
 
 ## Event tối thiểu
@@ -155,6 +167,13 @@ demo_fault_injected
 - [ ] Admission conflict không để lại duplicate attempt number.
 - [ ] Restart xóa provisional `dispatching` Attempt nên attempt number kế tiếp
   không bị trùng.
+- [ ] Restart khi run còn `planning`, cả trường hợp chưa/có
+  `plannerAgentRunId`, làm run fail; không dispatch Planner, không tạo task, có
+  đúng một `plan_failed` và một `coordination_failed`, rồi create mới dùng lại
+  đúng Planner/Workers thành công.
+- [ ] Gọi `initialize()` lần hai không tạo thêm failure event; test giữ nguyên
+  `plannerAgentRunId` và kiểm tra `completedAt`, safe `error`,
+  `details.reason` đúng contract.
 - [ ] Non-busy admission failure/throw không để task hoặc Attempt bị kẹt.
 - [ ] Timeout requeue tạo attempt ID mới.
 - [ ] Retry ưu tiên capable Agent chưa chạy task đó.
@@ -165,14 +184,25 @@ demo_fault_injected
 - [ ] `maxParallelism = 2` được giữ.
 - [ ] Final output lấy từ đúng final task.
 - [ ] Permanent failure làm downstream skipped.
+- [ ] Mọi capable Agent đều `stopped`/`error`/missing làm run fail thay vì chờ
+  vô hạn.
 - [ ] Run failure cancel active sibling và reject completion đến sau đó.
 - [ ] Một capable Worker vẫn retry được sau managed AgentRun failure.
 - [ ] Stop atomically cancel unfinished tasks và late result không commit.
 - [ ] Fault policy absent giữ production timeout; injected policy chỉ override
   attempt được chọn.
+- [ ] Fault policy throw, trả timeout âm/NaN hoặc sai shape đều fall back an toàn;
+  admitted Attempt vẫn `running` với production timeout và không có demo event.
+- [ ] Với attempt bị inject: `attempt_started < demo_fault_injected <
+  attempt_timed_out < task_requeued < attempt_started` của retry.
 - [ ] Dependency output chứa quote/delimiter/instruction-looking text vẫn được
   serialize thành valid JSON data trong Worker prompt.
-- [ ] Event sequence không trùng và đúng thứ tự.
+- [ ] Event sequence không trùng; các quan hệ thứ tự trong §14 đúng nhưng test
+  không ép task A hoàn thành trước/sau nhánh timeout song song của task B. Cover
+  cả hai cách xen kẽ bằng fake gateway, không so sánh cứng toàn bộ event array.
+- [ ] Trong run không bị truncate event history, sequence đúng liên tục
+  `[1, 2, ..., N]`; test lọc theo `taskId`/`attemptId` để phân biệt task B với
+  attempt B2.
 
 Tests dùng fake Planner plan và fake Agent execution gateway; không gọi Ark thật.
 

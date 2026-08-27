@@ -210,8 +210,9 @@ Validation:
 - Planner không nằm trong `workerAgentIds`.
 - Mọi Worker tồn tại và đang `ready` tại thời điểm create.
 - Không có Coordination Run non-terminal khác; nếu có trả `409`.
-- Nếu Agent chuyển sang busy trước lúc dispatch, AgentService là admission
-  authority và Coordinator phải xử lý conflict.
+- `createRun()` và public Playground admission serialize bằng cùng
+  `JsonStore.mutate()`. Nếu Playground reserve Agent trước, create trả `409`; nếu
+  Coordination Run được persist trước, Playground trả `409`.
 
 `createRun()` chỉ validate/persist trạng thái `planning`, kick off Planner ở
 background rồi trả `202`; HTTP request không chờ Planner hoặc Worker hoàn tất.
@@ -333,15 +334,19 @@ export interface CoordinationServiceDependencies {
 Task 01 export `class CoordinationService implements CoordinationServicePort`
 với constructor nhận đúng một `CoordinationServiceDependencies` object.
 `initialize()` chạy restart reconciliation sau khi baseline `AgentService` đã
-initialize store/workspaces. Route không gọi scheduler, store hoặc gateway trực
-tiếp.
+initialize store/workspaces. Nó reconcile cả run kẹt ở `planning` lẫn Worker
+Attempt kẹt ở `dispatching | running` theo §13. Route không gọi scheduler, store
+hoặc gateway trực tiếp.
 
 Task 01 export một standalone `CoordinationAgentGuard` implementation. Task 05
-inject guard đó vào `AgentService`; Task 03 không query coordination arrays. Guard
-throw `HttpError(409, ...)` khi Agent là Planner/Worker của run
-`planning | running`; terminal run không giữ Agent bị khóa. `createRun()` phải
-check Agent eligibility và persist run trong cùng store mutation với lifecycle
-guard serialization.
+inject guard đó vào `AgentService`; Task 03 không query coordination arrays.
+`assertMutable()` throw `HttpError(409, ...)` khi Agent là Planner/Worker của run
+`planning | running`; Task 05 dùng cùng guard cho lifecycle và public Playground
+admission. Terminal run không giữ Agent bị khóa. `createRun()` phải check Agent
+eligibility và persist run trong cùng store mutation với guard serialization.
+Việc guard nhả không tự đổi Agent `busy → ready`: old managed Run chưa terminal
+vẫn có thể giữ Agent `busy`, và public Playground tiếp tục nhận busy conflict cho
+tới khi cleanup hoàn tất.
 
 Error ownership theo baseline hiện có:
 
@@ -557,7 +562,9 @@ Invariants:
   admission; các code còn lại là terminal cho lần dispatch đó.
 - Gateway vẫn có thể throw vì bug/unexpected failure; mọi caller bắt exception
   và đi qua cleanup path, tuyệt đối không để Attempt `dispatching` vô hạn.
-- Public Playground giữ HTTP `202` behavior cũ.
+- Public Playground giữ HTTP `202` behavior cũ khi Agent không thuộc một
+  Coordination Run đang `planning | running`. Nếu Agent đang được giữ cho run
+  đó, admission phải trả `409` và không được tạo Message/AgentRun mới.
 - `completion` resolve thành terminal persisted AgentRun.
 - Sau managed coordination Planner/Worker Run `failed` hoặc `cancelled`, cleanup
   đưa Agent về `ready` để retry còn khả thi. Failure vẫn nằm trên AgentRun và
@@ -603,6 +610,12 @@ hard-coded safe label, không lấy từ prompt/output. Demo implementation ch�
 attempt đầu của đúng một Worker task có `capableAgentIds.length >= 2`, một lần
 trong mỗi Coordination Run. Khi nhận decision khác `null`, Task 01 persist
 `demo_fault_injected` atomically; Task 05 không ghi event/store trực tiếp.
+
+Task 01 phải bọc `decide()` bằng `try/catch` và validate decision ở runtime. Nếu
+hook throw, `timeoutAfterMs` invalid hoặc field sai kiểu, coi kết quả như `null`,
+dùng timeout/cancel policy bình thường và không emit `demo_fault_injected`.
+Không được để lỗi của demo hook rollback attach mutation, giữ Attempt
+`dispatching` hoặc bỏ mồ côi admitted AgentRun.
 
 ## 9. Persisted domain types
 
@@ -809,7 +822,12 @@ Không có lease.
    - chuyển Attempt `running`;
    - set `startedAt`, `timeoutAt`;
    - tăng `task.attemptCount`;
-   - emit `attempt_started`.
+   - emit `attempt_started`;
+   - gọi optional fault policy qua safe wrapper sau khi Attempt đã được
+     verify/admit; nếu có decision hợp lệ, override timeout cho Attempt và emit
+     `demo_fault_injected` ngay sau `attempt_started` trong cùng mutation.
+   Timer chỉ được arm sau mutation này commit, nên `attempt_timed_out` không thể
+   đứng trước hai event trên.
 6. Nếu nhận `{ ok: false, code: "busy" }`:
    - xóa provisional Attempt `dispatching` khỏi persisted attempts;
    - clear `currentAttemptId` và `assignedAgentId`;
@@ -895,31 +913,41 @@ Khi current managed `AgentRun` resolve `failed`, trong một atomic mutation:
   mỗi `schedulerTickMs` khi run còn active/ready task. Không emit event mỗi tick.
 - Chỉ Agent `ready` mới được dispatch. Agent `busy` khiến task ở `ready`; tick
   sau sẽ thử lại.
-- Nếu mọi selected capable Agent đều permanently unavailable (`stopped` hoặc
-  missing), task fail với `no_capable_agent_available`; downstream skip và run
-  fail. `busy` là temporary và không được coi là permanent failure.
+- Nếu mọi selected capable Agent đều permanently unavailable (`stopped`,
+  `error` hoặc missing), task fail với `no_capable_agent_available`; downstream
+  skip và run fail. `busy` là temporary và không được coi là permanent failure.
 - Retry ưu tiên capable Agent chưa chạy các attempt trước của task; chỉ dùng lại
   Agent cũ nếu không còn Agent khác, kể cả pool chỉ có một capable Worker.
 - Worker AgentRun cũ đã timeout nhưng chưa terminal vẫn tính vào
   `maxParallelism` và Agent đó vẫn không available.
 
-### 11.7 Agent lifecycle trong active coordination
+### 11.7 User action trên Agent trong active coordination
 
 Route-level check riêng lẻ là không đủ vì `createRun()` có thể race với
-update/start/stop/delete. Task 05 inject `CoordinationAgentGuard` vào
-`AgentService` và giữ các rule sau:
+update/start/stop/delete hoặc một Playground message mới. Task 05 inject
+`CoordinationAgentGuard` vào `AgentService` và giữ các rule sau:
 
 - Update kiểm tra guard trong chính store mutation cập nhật Agent.
 - Start kiểm tra guard trong mutation set `ready`. Stop/delete thực hiện mutation
   đầu tiên: check guard rồi atomically reserve bằng `stopped` trước mọi await
   cancel/archive. Delete chỉ xóa record trong mutation thứ hai sau archive.
+- Public `sendMessage()` gọi `assertMutable()` trong chính store mutation đang
+  chuyển Agent `ready → busy` và persist Message/AgentRun. Nếu conflict, toàn bộ
+  mutation fail với `409`, không để lại Run/Message mồ côi. Managed
+  Planner/Worker admission không gọi guard này vì chính Coordination Run đang sở
+  hữu các Agent đó.
 - `createRun()` check Agent `ready`, check active run và persist new run trong
   một store mutation; do đó nó serialize với lifecycle reservation.
 - Expected conflict trả `409`. User phải stop Coordination Run trước. MVP được
   phép reject toàn bộ update của selected Agent để đơn giản.
 
 Task 03 không import CoordinationRepository hoặc duplicate coordination state;
-Task 05 chỉ wire guard vào existing lifecycle methods trong integration branch.
+Task 05 wire guard vào existing lifecycle methods và public Playground admission
+trong integration branch. Vì tất cả dùng cùng `JsonStore.mutate()`, race giữa
+`createRun()` và Playground có đúng một bên thắng: Playground thắng trước thì
+create trả `409`; Coordination thắng trước thì Playground trả `409`.
+Sau khi Coordination Run terminal, guard không còn chặn; tuy nhiên Agent chỉ
+nhận Playground Run mới khi status thực tế đã trở lại `ready`.
 
 ### 11.8 Terminal run protocol
 
@@ -994,6 +1022,14 @@ Migration từ version 1:
 Restart policy MVP:
 
 - Baseline active AgentRuns bị AgentService mark `cancelled` như hiện tại.
+- Coordination Run còn `planning` không được resume hoặc retry Planner. Trong
+  một mutation, `initialize()` phải đổi run thành `failed`, set `completedAt`,
+  set safe `error = 'Server restarted while planning'`, rồi emit `plan_failed`
+  và `coordination_failed` theo thứ tự đó với
+  `details.reason = 'server_restart_during_planning'`. Giữ
+  `plannerAgentRunId` để audit, không gọi lại Planner và không tạo task. Việc run
+  trở thành terminal giải phóng Planner/Workers để `createRun()` tiếp theo không
+  bị `409`; áp dụng cả khi `plannerAgentRunId` là `null` hoặc đã được đăng ký.
 - Provisional Attempt còn `dispatching` (chưa consume `attemptCount`) bị xóa như
   admission conflict, reservation rollback và task requeue; event ghi reason
   `server_restart_before_admission`. Không giữ record khiến Attempt kế tiếp trùng
@@ -1002,32 +1038,57 @@ Restart policy MVP:
   lại, task requeue; nếu không, task/run fail theo terminal protocol.
 - Persist event giải thích recovery decision.
 
-## 14. Required event sequence cho core demo
+## 14. Thứ tự event bắt buộc cho core demo
+
+Vì task A và B chạy song song, contract chỉ khóa thứ tự có quan hệ phụ thuộc;
+không ép `task_completed` của A phải xảy ra trước hay sau lỗi có kiểm soát của B.
 
 ```text
-1  coordination_created
-2  plan_requested
-3  plan_received
-4  plan_validated
-5  task_ready                  task A
-6  task_ready                  task B
-7  attempt_started             task A / Agent 1 / attempt 1
-8  attempt_started             task B / Agent 2 / attempt 1
-9  task_completed              task A
-10 demo_fault_injected         task B
-11 attempt_timed_out           task B / attempt 1
-12 task_requeued               task B
-13 attempt_started             task B / Agent 3 / attempt 2
-14 stale_result_rejected       task B / attempt 1, nếu result quay lại
-15 task_completed              task B / attempt 2
-16 task_unblocked              final task
-17 attempt_started             final task
-18 task_completed              final task
-19 coordination_completed
+Chuỗi lập kế hoạch:
+coordination_created
+< plan_requested
+< plan_received
+< plan_validated
+
+Nhánh A:
+plan_validated
+< task_ready(A)
+< attempt_started(A1)
+< attempt_completed(A1)
+< task_completed(A)
+
+Nhánh B và retry:
+plan_validated
+< task_ready(B)
+< attempt_started(B1)
+< demo_fault_injected(B1)
+< attempt_timed_out(B1)
+< task_requeued(B)
+< attempt_started(B2)
+< attempt_completed(B2)
+< task_completed(B)
+
+Nếu output cũ quay lại:
+attempt_timed_out(B1)
+< stale_result_rejected(B1)
+
+Hội tụ vào final task:
+task_completed(A) VÀ task_completed(B)
+< task_unblocked(final)
+< attempt_started(final)
+< attempt_completed(final)
+< task_completed(final)
+< coordination_completed
 ```
 
-Event thực tế có thể thêm `attempt_completed`, nhưng các transition trên phải
-quan sát được trong API/UI.
+Để chứng minh có chạy song song, `attempt_started(A1)` và
+`attempt_started(B1)` đều phải xuất hiện trước event kết thúc đầu tiên của hai
+nhánh. Ngoài các quan hệ trên, event của A và B được phép xen kẽ theo bất kỳ thứ
+tự nào. `stale_result_rejected(B1)` có thể đến trước hoặc sau
+`task_completed(B)`, thậm chí sau `coordination_completed`, vì output cũ quay
+lại bất kỳ lúc nào; nó không được thay đổi output hoặc trạng thái của task B.
+UI tiếp tục poll trong một khoảng ngắn sau terminal theo Task 04 để nhận event
+đến muộn trong demo; event đến sau khoảng đó vẫn đọc được khi mở lại run.
 
 Để bảo đảm demo reassign:
 
@@ -1063,7 +1124,7 @@ Recommended status codes:
 | --- | ---: |
 | Malformed request | 400 |
 | Agent/Coordination Run not found | 404 |
-| Planner/Worker không `ready`, hoặc active-run conflict | 409 |
+| Planner/Worker không `ready`, active-run conflict, hoặc Playground dùng Agent đang được Coordination giữ | 409 |
 | Ark/Runtime chưa configured | 503 |
 | Unexpected server failure | 500 |
 

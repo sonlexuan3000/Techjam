@@ -116,10 +116,11 @@ Mỗi task phải code theo các exported interfaces trong
 Không copy/paste rồi đổi tên type riêng trên từng branch.
 
 Một ít conflict ở integration files như `apps/server/src/types.ts`, `app.ts`,
-`index.ts`, `apps/web/src/types.ts` hoặc `api.ts` là bình thường. Mục tiêu là
-giảm conflict bằng contract rõ, không phải bẻ kiến trúc thành quá nhiều layer chỉ
-để không bao giờ sửa cùng file. Author branch merge sau chịu trách nhiệm giữ cả
-hai feature và chạy regression tests.
+`index.ts`, `apps/web/src/types.ts`, `api.ts`, root `package.json` hoặc
+`package-lock.json` là bình thường. Mục tiêu là giảm conflict bằng contract rõ,
+không phải bẻ kiến trúc thành quá nhiều layer chỉ để không bao giờ sửa cùng file.
+Author branch merge sau chịu trách nhiệm giữ cả hai feature và chạy regression
+tests.
 
 ## Đồng bộ với `main`
 
@@ -166,7 +167,8 @@ Mô tả ngắn thay đổi và lý do.
 
 - [ ] Unit/integration tests liên quan đã pass
 - [ ] `npm run check` đã pass
-- [ ] Baseline Agent CRUD và Playground không bị hỏng
+- [ ] Baseline Agent CRUD và Playground của Agent không thuộc active
+  Coordination Run không bị hỏng
 - [ ] Không có secret, `.env` hoặc credential trong diff/log/screenshot
 
 ## Evidence
@@ -186,7 +188,8 @@ Chỉ `@sonlexuan3000` merge vào `main` sau khi:
 2. Logic quan trọng có automated tests.
 3. `npm run check` pass.
 4. Không có API key, `.env`, token, workspace state hoặc generated data.
-5. Không làm hỏng single-Agent Playground hiện có.
+5. Không làm hỏng single-Agent Playground hiện có; `409` cho Agent đang được giữ
+   bởi active Coordination Run là behavior bắt buộc của contract.
 6. Author đã xử lý toàn bộ review comments.
 7. PR đã được đồng bộ với `origin/main`.
 
