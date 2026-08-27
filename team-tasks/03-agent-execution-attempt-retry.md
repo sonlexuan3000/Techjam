@@ -36,6 +36,10 @@ type AgentExecutionGateway =
 Public Playground API vẫn trả HTTP `202` như trước. Coordinator dùng
 `completion` nội bộ để không phải poll HTTP.
 
+`start()` trả `AgentStartResult`: `{ ok: true, handle }` hoặc
+`{ ok: false, code, error }`. Expected admission failures không throw và không
+đòi Task 01/02 parse HTTP code hoặc error string.
+
 ## Checklist implementation
 
 - [ ] Extract managed Run primitive từ existing `sendMessage()`.
@@ -44,19 +48,29 @@ Public Playground API vẫn trả HTTP `202` như trước. Coordinator dùng
 - [ ] Planner và Worker đều đi qua existing AgentService/AgentRunner.
 - [ ] Thêm Run origin/correlation metadata cho coordination.
 - [ ] Không truyền Ark key vào prompt, DB, response hoặc log.
-- [ ] Hỗ trợ Agent capabilities trong create/update persistence.
+- [ ] Thêm `capabilities?: string[]` vào `CreateAgentInput`/`UpdateAgentInput` và
+  hỗ trợ create/update persistence (Task 05 chỉ nối Zod route body).
 - [ ] Normalize capability lowercase, trim và deduplicate.
-- [ ] Reject capability update/stop/delete Agent thuộc active Coordination Run.
+- [ ] Map expected start failures vào đúng code:
+  `busy | stopped | not_found | not_configured | internal`.
+- [ ] Không tạo AgentRun khi admission trả `ok: false`.
 - [ ] `cancel(runId)` chỉ cancel nếu đúng Run đó vẫn active trên Agent.
 - [ ] Terminal/unknown Run cancel là idempotent no-op.
 - [ ] Managed completion luôn trả persisted terminal AgentRun.
-- [ ] Admission conflict giữ status code/meaning để scheduler xử lý được.
+- [ ] Managed coordination failure/cancel cleanup Agent về `ready`; lỗi vẫn nằm
+  trên AgentRun để Task 01 quyết định retry.
+- [ ] Playground failure behavior hiện có không bị đổi.
 
 ## Boundary semantics
 
 Gateway chỉ quản lý lifecycle của baseline AgentRun. Coordinator quyết định một
 AgentRun completion có còn là current attempt để commit task output hay không.
 Không dùng lease token hoặc heartbeat.
+
+Atomic guard cho public Agent lifecycle thuộc Task 05 sau Database v2 migration.
+Task 03 không import `CoordinationAgentGuard`/`DatabaseV2`, không đọc coordination
+arrays và không duplicate coordination state; một shared-file conflict nhỏ trong
+`agent-service.ts` khi Task 05 merge sau là chấp nhận được.
 
 ## Automated tests
 
@@ -65,6 +79,8 @@ Không dùng lease token hoặc heartbeat.
 - [ ] Managed Run trả completion promise đúng terminal state.
 - [ ] Correlation metadata đúng task/attempt.
 - [ ] Busy admission trả conflict và không tạo orphan AgentRun.
+- [ ] Mọi expected admission failure trả discriminated result, không throw.
+- [ ] Managed failed Run đưa Agent về `ready`, nên một-Worker retry vẫn khả thi.
 - [ ] Cancel theo Run ID map đúng Agent.
 - [ ] Cancel Run A muộn không cancel Run B mới trên cùng Agent.
 - [ ] Cancellation không để Agent kẹt `busy`.

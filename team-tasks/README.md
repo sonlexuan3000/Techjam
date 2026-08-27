@@ -109,6 +109,18 @@ fix(task-04): keep event polling after refresh
 docs(task-05): document controlled timeout demo
 ```
 
+## Shared interfaces và conflict chấp nhận được
+
+Mỗi task phải code theo các exported interfaces trong
+`apps/server/src/coordination-types.ts` và public HTTP DTO trong `CONTRACTS.md`.
+Không copy/paste rồi đổi tên type riêng trên từng branch.
+
+Một ít conflict ở integration files như `apps/server/src/types.ts`, `app.ts`,
+`index.ts`, `apps/web/src/types.ts` hoặc `api.ts` là bình thường. Mục tiêu là
+giảm conflict bằng contract rõ, không phải bẻ kiến trúc thành quá nhiều layer chỉ
+để không bao giờ sửa cùng file. Author branch merge sau chịu trách nhiệm giữ cả
+hai feature và chạy regression tests.
+
 ## Đồng bộ với `main`
 
 Trước khi mở hoặc cập nhật PR:
@@ -202,11 +214,15 @@ Chỉ bật “Require status checks” sau khi repo có GitHub Actions workflow
 ## Thứ tự tích hợp
 
 1. Merge và giữ ổn định [Coordination MVP Contracts v1](./CONTRACTS.md).
-2. Merge Planner/DAG validator và Agent execution gateway.
-3. Merge Coordination core với hai interface trên.
-4. Merge API/persistence.
-5. Kết nối UI.
-6. Chạy end-to-end ModelArk, timeout/retry demo và toàn bộ validation suite.
+2. Tasks 01–04 phát triển song song bằng fake ports/fixtures đúng shared types.
+3. Merge Planner/DAG validator và Agent execution gateway.
+4. Sync/merge Coordination core với hai implementation trên.
+5. Merge API/persistence/fault-policy integration; resolve shared-file conflict
+   tại feature branch này.
+6. Kết nối UI vào public API đã khóa.
+7. Chạy baseline Playground, end-to-end ModelArk, timeout/retry demo và toàn bộ
+   validation suite.
 
 Task có thể phát triển song song bằng fake/fixture, nhưng shared contract không
-được tự ý đổi. Mọi thay đổi contract phải được leader duyệt trước.
+được tự ý đổi. Trước mỗi PR, merge `origin/main`; mọi thay đổi contract phải được
+leader duyệt trước.

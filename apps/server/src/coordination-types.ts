@@ -13,7 +13,8 @@ export type CoordinationTaskStatus =
   | "running"
   | "completed"
   | "failed"
-  | "skipped";
+  | "skipped"
+  | "cancelled";
 
 export type TaskAttemptStatus =
   | "dispatching"
@@ -34,16 +35,19 @@ export type CoordinationEventType =
   | "plan_timed_out"
   | "task_ready"
   | "attempt_dispatch_rejected"
+  | "attempt_dispatch_failed"
   | "attempt_started"
   | "attempt_completed"
   | "attempt_failed"
   | "attempt_timed_out"
+  | "attempt_cancelled"
   | "task_requeued"
   | "stale_result_rejected"
   | "task_completed"
   | "task_unblocked"
   | "task_failed"
   | "task_skipped"
+  | "task_cancelled"
   | "coordination_completed"
   | "coordination_failed"
   | "coordination_cancelled"
@@ -192,6 +196,8 @@ export interface PlannerRequest {
   userPrompt: string;
   availableCapabilities: string[];
   maxTasks: number;
+  timeoutMs: number;
+  registerAgentRun(plannerAgentRunId: string): Promise<boolean>;
 }
 
 export interface PlannerSuccess {
@@ -238,14 +244,55 @@ export interface ManagedRunHandle {
   completion: Promise<ManagedAgentRun>;
 }
 
+export type AgentStartFailureCode =
+  | "busy"
+  | "stopped"
+  | "not_found"
+  | "not_configured"
+  | "internal";
+
+export interface AgentStartSuccess {
+  ok: true;
+  handle: ManagedRunHandle;
+}
+
+export interface AgentStartFailure {
+  ok: false;
+  code: AgentStartFailureCode;
+  error: string;
+}
+
+export type AgentStartResult = AgentStartSuccess | AgentStartFailure;
+
 export interface AgentExecutionGateway {
   start(
     agentId: string,
     prompt: string,
     origin: AgentRunOrigin,
-  ): Promise<ManagedRunHandle>;
+  ): Promise<AgentStartResult>;
 
   cancel(runId: string): Promise<void>;
+}
+
+export interface AttemptFaultContext {
+  coordinationRunId: string;
+  taskId: string;
+  taskKey: string;
+  attemptId: string;
+  attemptNumber: number;
+  agentId: string;
+  capableAgentIds: string[];
+}
+
+export interface AttemptFaultDecision {
+  timeoutAfterMs: number;
+  cancelAgentRunOnTimeout: boolean;
+  reason: string;
+}
+
+/** Optional demo/test hook. Production uses no policy. */
+export interface CoordinationFaultPolicy {
+  decide(context: AttemptFaultContext): AttemptFaultDecision | null;
 }
 
 export type CoordinatedAgent = Agent & { capabilities: string[] };
@@ -266,6 +313,10 @@ export interface CoordinationRepository {
   mutate<T>(mutation: (database: DatabaseV2) => T | Promise<T>): Promise<T>;
 }
 
+export interface CoordinationAgentGuard {
+  assertMutable(database: DatabaseV2, agentId: string): void;
+}
+
 export interface CoordinationServicePort {
   initialize(): Promise<void>;
   createRun(input: CreateCoordinationRunInput): Promise<CoordinationRun>;
@@ -279,4 +330,5 @@ export interface CoordinationServiceDependencies {
   plannerService: PlannerService;
   executionGateway: AgentExecutionGateway;
   policy: CoordinationPolicy;
+  faultPolicy?: CoordinationFaultPolicy;
 }

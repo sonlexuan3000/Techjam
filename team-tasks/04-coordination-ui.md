@@ -32,12 +32,16 @@ leader trước khi refactor phần single-Agent Playground.
 
 ## Launch form
 
+- [ ] Mở rộng existing create/settings Agent form bằng capabilities input và gửi
+  optional `capabilities: string[]` qua existing Agent API.
 - [ ] User goal/prompt textarea.
 - [ ] Planner Agent dropdown.
 - [ ] Worker Agent checklist.
 - [ ] Hiển thị capability badges.
-- [ ] Không cho chọn Agent `stopped` hoặc `busy` khi launch.
-- [ ] Validate có một Planner và ít nhất hai Workers.
+- [ ] Chỉ cho chọn Planner/Workers đang `ready`; Agent `busy`, `error` hoặc
+  `stopped` không selectable.
+- [ ] Validate có đúng một Planner, `2–8` unique Workers và Planner không nằm
+  trong Worker IDs (backend vẫn validate lại).
 - [ ] Nút `Launch coordinated run`.
 - [ ] Hiển thị API/validation error rõ ràng.
 
@@ -47,6 +51,9 @@ leader trước khi refactor phần single-Agent Playground.
 - [ ] Không poll từng AgentRun từ browser.
 - [ ] Giữ polling sau khi task được retry.
 - [ ] Dừng polling khi run terminal.
+- [ ] Có nút Stop khi run `planning/running`; gọi đúng
+  `POST /api/coordination-runs/:id/stop`, sau đó fetch một final detail snapshot
+  trước khi dừng polling để task/attempt/event không còn stale trên UI.
 - [ ] Refresh browser vẫn mở lại được run gần nhất qua list endpoint.
 - [ ] Hiển thị final output khi completed.
 
@@ -71,7 +78,13 @@ running    purple
 retrying   amber
 completed  green
 failed     red
+skipped    gray
+cancelled  gray
 ```
+
+`retrying` chỉ là derived label khi
+`task.status === "ready" && task.attemptCount > 0`; nó không được thêm vào
+`CoordinationTaskStatus` hoặc gửi về backend.
 
 ## Graph scope
 
@@ -92,12 +105,18 @@ attempt_started
 attempt_timed_out
 task_requeued
 stale_result_rejected
+attempt_cancelled / task_cancelled
 task_completed
 task_unblocked
 coordination_completed
 ```
 
 Event nên hiển thị task, attempt và Agent liên quan nếu có.
+`EventTimeline` phải render được toàn bộ `CoordinationEventType` union trong
+shared contract. Event chưa có presentation riêng phải dùng generic fallback
+(`type + message`), không crash hoặc render rỗng; đặc biệt cover plan reject/fail,
+dispatch reject/fail, task fail/skip/cancel, coordination fail/cancel và
+`demo_fault_injected`.
 
 ## Development không cần backend
 
@@ -109,6 +128,7 @@ running với hai parallel tasks
 retrying attempt 2
 completed với final output
 failed after max attempts
+cancelled after user stop
 ```
 
 Xóa hoặc cô lập fixture khỏi production path trước khi merge.
