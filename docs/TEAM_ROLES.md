@@ -1,61 +1,66 @@
 # Five-person team plan: make parser errors recoverable
 
 The current baseline already reaches about 99% Hit Rate on the official public
-set. The main risk is no longer basic ranking: a parser mistake can be amplified
-by a destructive filter that removes the true product permanently.
+set. One teammate already owns safe filtering, candidate recovery, ranking,
+`other`, and Top-K policy together. Keep that working path under one owner rather
+than splitting tightly coupled code between two people.
 
-The design goal is therefore:
+The main design goal is:
 
-> A parsing mistake may lower a product's score, but must not silently kill the
-> target for the rest of the session.
+> A parsing or semantic-matching mistake may lower a product's score, but must
+> not silently kill the target for the rest of the session.
 
-Three people own algorithms, one owns adversarial evaluation, and one owns
-integration/release. Do not assign two people to rebuild the same public-set
-ranker.
+Roles 1–3 are the three algorithm owners. Role 4 independently measures whether
+their changes generalize, and role 5 keeps the official Agent shippable.
 
 ## 1. Input NLP and conversation state
 
-Owns normal user text to structured, uncertainty-aware constraints:
+Owns normal user text to structured, uncertainty-aware intent:
 
-- category, material, color, size, style, brand, budget, feature, and use case;
-- canonical values, synonyms, paraphrases, typos, and compound replies;
-- positive/negative intent, no-preference replies, and intent overrides;
-- user wording strength such as `must`, `need`, `prefer`, or `ideally`;
-- parser confidence, evidence source, state history, and session isolation.
+- detect category and extract the exact spans that express constraints;
+- identify slot, polarity, no-preference, and wording strength;
+- handle multiple constraints, negation, overrides, and session history;
+- preserve raw text, evidence source, and parser confidence;
+- avoid guessing a hidden evaluator `hard` or `soft` label.
 
-The parser must not emit an unquestionable hidden `is_hard` label. It should
-emit what was observed and how certain the interpretation is:
+Example output:
 
 ```python
 ParsedConstraint(
     slot="feature",
     raw_value="not get wet in rain",
-    canonical_value="waterproof",
     polarity="positive",
     strength="preference",
-    confidence=0.72,
+    confidence=0.88,
     source="user_message",
 )
 ```
 
+This owner extracts what the user meant. They do not decide which products to
+remove and do not build the final ranking.
+
 Target modules: `starter/parser.py`, `starter/state.py`, and
 `tests/test_parser_state.py`.
 
-## 2. Safe filtering and candidate recovery
+## 2. Core search owner: filtering, ranking, and dialogue policy
 
-Owns candidate generation and prevents uncertain evidence from deleting the
-answer:
+This is the teammate who already owns roles 2 and 3 from the previous plan. They
+preserve and improve the current high-scoring path:
 
-- catalog normalization and field-aware candidate indexes;
-- exact/sparse retrieval plus an optional measured semantic fallback;
-- soft constraints as score signals, not mandatory filters;
-- reversible filtering for explicit, high-confidence constraints;
-- automatic relaxation of the weakest constraint when the pool collapses;
-- a recovery pool from the full relevant category;
-- same-slot conflict and override handling;
-- diagnostics for pool size and the reason each constraint was applied.
+- candidate pools and reversible filtering;
+- recovery candidates when evidence is uncertain or contradictory;
+- ranking formula and score breakdown;
+- `rating_number` as a relevance tie-break;
+- `other` question schedule and later information-gain experiments;
+- dynamic Top-K, currently 1 then 2 then up to 10;
+- already-shown products, overrides, and scenario trade-offs.
 
-A useful mental model is tiered retrieval:
+This owner consumes parser events and product-match scores. Soft or uncertain
+evidence should normally change scores, not permanently delete products. Even a
+high-confidence filter must be reversible; an empty-pool fallback is not enough,
+because a wrong filter can leave a non-empty pool that excludes the target.
+
+A useful mental model is:
 
 ```text
 Tier A: matches all high-confidence active constraints
@@ -63,31 +68,45 @@ Tier B: matches most constraints or misses an uncertain constraint
 Tier C: category-relevant recovery candidates
 ```
 
-Prefer penalties and tiers over permanent deletion. Even a high-confidence
-filter must be reversible. An empty pool is not the only failure: a wrong filter
-can produce a non-empty pool that excludes the target, so `if pool is empty`
-alone is not a sufficient safeguard.
+Freeze the current 99% public path as a golden regression before changing its
+behavior.
 
-Target modules: `starter/catalog.py`, `starter/retrieval.py`,
-`starter/filtering.py`, and `tests/test_filtering.py`.
-
-## 3. Ranking and dialogue policy
-
-Owns and preserves the current high-scoring baseline after receiving scored
-candidates from role 2:
-
-- ranking formula and score breakdown;
-- `rating_number` as a relevance tie-break;
-- `other` question schedule and later information-gain experiments;
-- dynamic Top-K, currently 1 then 2 then up to 10;
-- already-shown products and recommendation diversity;
-- Hit Rate, MRR, and MTTC trade-offs by scenario.
-
-This owner should not parse raw language or permanently remove candidates. Freeze
-the current 99% path as a regression baseline before changing the policy.
-
-Target modules: `starter/ranking.py`, `starter/policy.py`,
+Target modules: `starter/search.py`, `starter/filtering.py`,
+`starter/ranking.py`, `starter/policy.py`, `tests/test_filtering.py`,
 `tests/test_ranking.py`, and `tests/test_policy.py`.
+
+## 3. Catalog semantic matching and product representation
+
+Owns the layer between parsed constraints and the core search owner. This is the
+new role created by combining the old filtering and ranking roles:
+
+- normalize catalog fields and build field-aware indexes;
+- canonical aliases such as `grey -> gray` and `x-large -> XL`;
+- match paraphrases such as `not get wet in rain -> waterproof`;
+- exact, token, fuzzy, and optional embedding-based match routes;
+- return per-product match scores and matching evidence, not a final decision;
+- calibrate match confidence and provide a reliable exact-match fallback;
+- benchmark startup time, memory, and per-query latency.
+
+Example output:
+
+```python
+ConstraintMatch(
+    constraint_id="c2",
+    product_asin="B0...",
+    score=0.81,
+    route="semantic",
+    matched_field="features",
+    matched_text="Waterproof upper keeps feet dry",
+)
+```
+
+This owner does not choose Top-K or ask questions. Their job is to say how well
+each product matches each constraint and why; role 2 decides how that evidence
+affects filtering and ranking.
+
+Target modules: `starter/catalog.py`, `starter/matcher.py`,
+`starter/semantic.py`, and `tests/test_matcher.py`.
 
 ## 4. Adversarial evaluation and generated data
 
@@ -122,7 +141,7 @@ tests, and experiment reports. Generated outputs remain ignored.
 Owns the official surface and prevents merge conflicts:
 
 - `Agent.reset`/`Agent.respond` compatibility and module wiring;
-- the shared data contracts and conversation-state lifecycle;
+- shared contracts and conversation-state lifecycle;
 - simple natural-language response templates and explanations;
 - CI, Makefile, dependencies, README, demo, and submission packaging;
 - final benchmark, merge coordination, and release checks.
@@ -135,44 +154,42 @@ Target paths: `starter/agent.py`, `starter/contracts.py`,
 
 ## Shared module contract
 
-Agree on this contract before splitting the monolithic baseline:
+Agree on this boundary before splitting the monolithic baseline:
 
 ```python
 events = parser.parse(user_message, state)
 state = state_manager.apply(state, events)
 
-candidate_result = retriever.retrieve(
-    state=state,
-    allow_recovery=True,
+match_result = matcher.match(
+    constraints=state.active_constraints,
 )
-# tiers, candidate scores, pool sizes, applied/relaxed constraints
+# per-constraint/product scores, routes, fields, and evidence
 
-rank_result = ranker.rank(state, candidate_result)
-
-decision = policy.decide(
+search_result = search_engine.decide(
     state=state,
-    rank_result=rank_result,
+    match_result=match_result,
     turn=turn,
     requested_top_k=top_k,
+    allow_recovery=True,
 )
+# ranked ASINs, tiers, applied/relaxed constraints, next question
 
-response = renderer.render(decision, rank_result)
+response = renderer.render(search_result)
 ```
 
 The evaluator never exposes whether a revealed value came from its hidden
-`hard_constraints` or `soft_preferences` list. The team may infer user strength
-from wording, but it must preserve confidence and allow recovery instead of
-turning that inference directly into permanent deletion.
+`hard_constraints` or `soft_preferences` list. The parser records wording and
+confidence, the matcher measures product compatibility, and the core search
+owner makes a reversible ranking/filtering decision.
 
 ## Implementation order
 
 1. Freeze the current public/generated scores and behavior as golden tests.
-2. Agree on `ParsedConstraint` and candidate-result schemas.
-3. Build parser confidence, safe filtering, and adversarial tests in parallel.
-4. Integrate without changing the current ranking/policy behavior first.
-5. Compare exact-only, score-only, tiered, and relaxed-filter variants.
+2. Agree on `ParsedConstraint`, `ConstraintMatch`, and `SearchResult` schemas.
+3. Build parser, semantic matcher, and adversarial fixtures in parallel.
+4. Have the core search owner consume match scores without changing policy first.
+5. Compare exact-only, semantic-score, tiered, and relaxed-filter variants.
 6. Tune `other` and information-gain policy only after target survival is safe.
 
-NLP input remains P0, but one focused owner is enough. The second critical owner
-is safe filtering: their job is to make imperfect NLP degrade gracefully rather
-than cause an unrecoverable miss.
+This keeps three people on meaningful algorithm work without duplicating the
+friend's existing filter/ranker/policy implementation.

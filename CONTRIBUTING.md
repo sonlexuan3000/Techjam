@@ -5,7 +5,7 @@
 1. Run `make setup`, `make test`, and `make evaluate`.
 2. Read `docs/TEAM_ROLES.md` and stay inside the agreed module ownership.
 3. Branch from `main` with a focused name such as `feat/input-parser`,
-   `feat/safe-filter`, `feat/ranking-policy`, or `test/adversarial-eval`.
+   `feat/core-search`, `feat/semantic-matcher`, or `test/adversarial-eval`.
 
 Do not commit directly to `main` during implementation. Use a pull request so a
 second teammate can review score changes and contract compatibility.
