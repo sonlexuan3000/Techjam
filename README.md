@@ -51,6 +51,12 @@ new catalog targets. The large paraphrase drop shows that input parsing is the
 current P0 weakness. Stress results are diagnostics, not a claim about private
 test wording. See [docs/TEAM_BASELINE.md](docs/TEAM_BASELINE.md).
 
+The current architecture priority is not more destructive filtering. Parser
+output must carry confidence, soft or uncertain constraints should affect
+scores, and retrieval must keep a recovery path so one NLP mistake cannot remove
+the true product permanently. The revised ownership and contract are documented
+in [docs/TEAM_ROLES.md](docs/TEAM_ROLES.md).
+
 ## What You Receive
 
 - A frozen catalog of 50,000 products from the `Clothing_Shoes_and_Jewelry` category of Amazon Reviews 2023.

@@ -5,7 +5,7 @@
 1. Run `make setup`, `make test`, and `make evaluate`.
 2. Read `docs/TEAM_ROLES.md` and stay inside the agreed module ownership.
 3. Branch from `main` with a focused name such as `feat/input-parser`,
-   `feat/retrieval`, `feat/question-policy`, or `test/unseen-eval`.
+   `feat/safe-filter`, `feat/ranking-policy`, or `test/adversarial-eval`.
 
 Do not commit directly to `main` during implementation. Use a pull request so a
 second teammate can review score changes and contract compatibility.
@@ -30,6 +30,8 @@ Every algorithm PR should include:
 - public score before and after;
 - generated-dev score before and after;
 - scenario-level regressions, if any;
+- Target Survival Rate and False Elimination Rate for filtering changes;
+- candidate-pool size before/after each newly applied constraint;
 - unit tests for new parser/state/policy behavior;
 - latency or memory impact when an index/model changes.
 
@@ -45,6 +47,11 @@ Use `make stress` for any input-parser change. The committed seed is visible, so
 the generated 800-row split is only a shared regression check, not a truly hidden
 holdout. If the team wants one internal sealed check, the evaluation owner should
 generate it with a separate uncommitted seed and report only aggregate metrics.
+
+Any PR that turns an inferred or soft constraint into a permanent hard deletion
+must explain why the target remains recoverable when parsing or metadata is
+wrong. An empty-pool fallback alone is insufficient because a wrong filter can
+leave a non-empty pool that no longer contains the target.
 
 ## Integration rule
 
