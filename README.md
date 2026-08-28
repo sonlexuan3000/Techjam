@@ -42,20 +42,41 @@ Verified locally on 28 August 2026:
 
 | Suite | Sessions | Hit Rate@10 | MRR | MTTC | Score |
 |---|---:|---:|---:|---:|---:|
-| Official public | 200 | 0.995 | 0.952548 | 2.0700 | 0.961864 |
-| Shared synthetic dev | 2,000 | 0.987 | 0.853885 | 2.7005 | 0.915655 |
-| Paraphrase stress | 200 | 0.230 | 0.065052 | 9.8650 | 0.157216 |
+| Official public | 200 | 0.995 | 0.954631 | 2.0750 | 0.962389 |
+| Shared synthetic dev | 2,000 | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
+| Paraphrase stress | 200 | 0.995 | 0.952964 | 2.0900 | 0.961589 |
 
 The synthetic-dev result suggests the retrieval/ranking strategy transfers to
-new catalog targets. The large paraphrase drop shows that input parsing is the
-current P0 weakness. Stress results are diagnostics, not a claim about private
-test wording. See [docs/TEAM_BASELINE.md](docs/TEAM_BASELINE.md).
+new catalog targets. The dependency-free lightweight parser closes the previous
+wrapper-only paraphrase failure while keeping exact constraint values intact.
+Stress results are diagnostics, not a claim about private test wording. See
+[docs/TEAM_BASELINE.md](docs/TEAM_BASELINE.md).
 
-The current architecture priority is not more destructive filtering. Parser
-output must carry confidence, soft or uncertain constraints should affect
-scores, and retrieval must keep a recovery path so one NLP mistake cannot remove
-the true product permanently. The revised ownership and contract are documented
-in [docs/TEAM_ROLES.md](docs/TEAM_ROLES.md).
+Unknown wrappers use catalog-guided exact-span fallback and are recorded as
+`catalog_fallback`; that evidence affects ranking but cannot destructively
+intersect the candidate pool. Explicit requirement wrappers remain strong
+evidence. The next NLP problem is value-level semantics such as
+`not wet in rain -> waterproof`, which this parser intentionally does not guess.
+The ownership and future matcher contract are documented in
+[docs/TEAM_ROLES.md](docs/TEAM_ROLES.md).
+
+## Lightweight Input NLP
+
+`starter/parser.py` uses only Python's standard library. It recognizes families
+of category, requirement, preference, no-preference, negation, and override
+messages; normalizes smart punctuation; and preserves the raw constraint span
+for catalog matching. Explicit disclosure is parsed before generic negation so
+metadata such as `holds effectively without wiggling` is not corrupted.
+
+If a private message changes only the surrounding prose, the Agent can recover
+exact one-word or multi-word catalog atoms without an LLM call. It also handles
+two values joined by a semicolon or `and`, but does not claim semantic equivalence
+between differently worded values.
+
+On an Apple M4 with the 50,000-product catalog, the final parser averaged about
+`8.7 µs` per recognized message. Normal catalog fallback averaged `0.075 ms`
+with p95 `0.11 ms`. Building the full in-memory index takes about `5.3 s` once
+at process startup.
 
 ## What You Receive
 
@@ -157,6 +178,7 @@ docs/TEAM_ROLES.md                five-person ownership and module contracts
 scripts/build_unseen_official_sessions.py deterministic shared test generator
 scripts/run_paraphrase_stress_eval.py      input-language robustness test
 starter/agent.py                  official interface and current team baseline
+starter/parser.py                 dependency-free lightweight input parser
 evaluator/local_evaluator.py      public-set simulator and scorer
 ```
 

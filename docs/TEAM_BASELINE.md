@@ -7,9 +7,9 @@ prediction.
 
 | Suite | Sessions | Hit Rate@10 | MRR | MTTC | Technical score |
 |---|---:|---:|---:|---:|---:|
-| Official public set | 200 | 0.995 | 0.952548 | 2.0700 | 0.961864 |
-| Shared synthetic dev | 2,000 | 0.987 | 0.853885 | 2.7005 | 0.915655 |
-| Deterministic paraphrase stress | 200 | 0.230 | 0.065052 | 9.8650 | 0.157216 |
+| Official public set | 200 | 0.995 | 0.954631 | 2.0750 | 0.962389 |
+| Shared synthetic dev | 2,000 | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
+| Deterministic paraphrase stress | 200 | 0.995 | 0.952964 | 2.0900 | 0.961589 |
 
 Reproduce:
 
@@ -22,7 +22,7 @@ make evaluate-unseen-dev
 make stress
 ```
 
-Thirteen unit/contract tests pass. The synthetic generator selected 2,800
+Thirty-one unit/contract tests pass. The synthetic generator selected 2,800
 unique targets with at least four generated constraints; public/dev/second-split
 target overlap was zero and all scenario-mix checks passed.
 
@@ -34,12 +34,22 @@ target overlap was zero and all scenario-mix checks passed.
 - Strong synthetic-dev performance is useful evidence against memorizing only
   the 200 public target ASINs, but the generator shares evaluator assumptions.
 - The paraphrase suite keeps hidden constraint strings and scenario timing the
-  same while changing surrounding prose. Its large regression demonstrates a
-  brittle wrapper-dependent parser; it does not prove the organizer-private
-  simulator will use those wrappers.
+  same while changing surrounding prose. The old exact-wrapper parser scored
+  `0.157216`; the lightweight parser scores `0.961589`. This does not prove the
+  organizer-private simulator will use those wrappers.
+- Unknown-wrapper exact catalog matches are tagged `catalog_fallback` and score
+  candidates without intersecting the pool. This keeps a parser guess from
+  permanently deleting a non-empty pool containing the true target.
+- Value-level paraphrases are outside this test: `not wet in rain` will not be
+  rewritten to `waterproof`. That belongs in the semantic matcher, where it can
+  be scored with calibrated confidence rather than used as a hard filter.
 - The shared 800-row second split is reproducible from a public seed and is
   therefore not secret. A separate uncommitted seed is needed for a genuine
   internal freeze check.
+
+The final dependency-free parser averaged `8.7 µs` per recognized message and
+`0.075 ms` for normal exact catalog fallback on an Apple M4. Full catalog index
+construction averaged about `5.3 s` once per process.
 
 Every algorithm PR should append its before/after result to the PR description
 rather than editing this snapshot opportunistically.

@@ -7,6 +7,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from starter.parser import parse_message
+
 
 WORD_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 
@@ -449,6 +451,12 @@ class Agent:
             return []
 
         alternatives: list[list[str]] = [[payload]]
+        catalog_parts = self._catalog_phrases_in_message(
+            payload,
+            allow_singletons=True,
+        )
+        if catalog_parts:
+            alternatives.append(catalog_parts)
         for index, char in enumerate(payload):
             if char != ";":
                 continue
@@ -479,71 +487,119 @@ class Agent:
             return [payload]
         return best
 
-    def _parse(self, state: Session, message: str) -> None:
-        lowered = message.lower()
+    def _catalog_phrases_in_message(
+        self,
+        message: str,
+        category: str = "",
+        *,
+        allow_singletons: bool = False,
+    ) -> list[str]:
+        """Find exact multi-token catalog atoms inside an unknown wrapper.
 
-        category_match = re.search(
-            r"i(?:'m| am) looking for\s+(.+?)(?:,\s*but\b|\.\s*|$)",
-            message,
-            re.IGNORECASE,
-        )
-        if category_match and not state.category:
-            state.category = evaluator_clean(category_match.group(1))
+        Messages are short, so enumerating their bounded token n-grams is much
+        cheaper than scanning every catalog phrase.  Original character spans
+        are returned so punctuation such as ``100%`` and ``Color:`` survives.
+        """
 
-        override_match = re.search(
-            r"what i need is:\s*(.+)$",
-            message,
-            flags=re.IGNORECASE,
-        )
-        if override_match and ("actually" in lowered or "ignore" in lowered):
-            payload = evaluator_clean(override_match.group(1))
-            explicit_old: str | None = None
-            instead_match = re.match(r"(.+?)\s+instead of\s+(.+)", payload, re.IGNORECASE)
-            if instead_match:
-                payload = evaluator_clean(instead_match.group(1))
-                explicit_old = evaluator_clean(instead_match.group(2))
-            self._apply_override(state, payload, explicit_old)
+        tokens = list(WORD_RE.finditer(message))
+        if not tokens:
+            return []
+
+        category_key = normalize(category)
+        candidates: list[tuple[int, int, int, str]] = []
+        max_words = min(40, len(tokens))
+        for start in range(len(tokens)):
+            upper = min(len(tokens), start + max_words)
+            minimum_end = start if allow_singletons else start + 1
+            for end in range(upper, minimum_end, -1):
+                key = " ".join(token.group(0).lower() for token in tokens[start:end])
+                if key == category_key or key not in self.atom_to_asins:
+                    continue
+                char_start = tokens[start].start()
+                char_end = tokens[end - 1].end()
+                candidates.append(
+                    (end - start, char_start, char_end, message[char_start:char_end])
+                )
+                break
+
+        selected: list[tuple[int, int, str]] = []
+        for _length, char_start, char_end, raw in sorted(
+            candidates,
+            key=lambda item: (-item[0], item[1]),
+        ):
+            if any(char_start < end and char_end > start for start, end, _ in selected):
+                continue
+            selected.append((char_start, char_end, raw))
+
+        return [raw for _start, _end, raw in sorted(selected)]
+
+    def _parse(self, state: Session, message: str, turn: int) -> None:
+        parsed = parse_message(message, turn=turn)
+        if parsed.category and not state.category:
+            state.category = evaluator_clean(parsed.category)
+
+        if parsed.action == "override" and parsed.payload:
+            self._apply_override(state, parsed.payload, parsed.explicit_old_value)
             return
 
-        # Negative intent is stronger than a normal override and should remove
-        # the old clue from positive retrieval evidence.
-        if "don't have a preference" not in lowered and "do not have a preference" not in lowered:
-            negation_patterns = (
-                r"(?:don't|do not) want\s+(.+?)(?:\s+anymore|[.,]|$)",
-                r"\bavoid\s+(.+?)(?:[.,]|$)",
-                r"\bwithout\s+(.+?)(?:[.,]|$)",
+        if parsed.action == "negate" and parsed.payload:
+            # Some catalog features are care instructions whose literal text
+            # starts with "Please avoid ...". If a private wrapper returns one
+            # of those atoms bare, prefer the exact catalog evidence unless the
+            # payload clearly refers to an already-active clue.
+            full_key = normalize(evaluator_clean(message))
+            payload_key = normalize(parsed.payload)
+            refers_to_active_clue = any(
+                clue.key == payload_key
+                or clue.key in payload_key
+                or payload_key in clue.key
+                for clue in state.current_intent
             )
-            for pattern in negation_patterns:
-                match = re.search(pattern, message, re.IGNORECASE)
-                if match:
-                    self._apply_negation(state, match.group(1))
-                    return
-
-        reply_match = re.search(
-            r"for that, what matters is:\s*(.+)$",
-            message,
-            flags=re.IGNORECASE,
-        )
-        if reply_match:
-            for part in self._split_revealed_payload(reply_match.group(1)):
-                self._add_clue(state, part, "revealed")
+            if full_key in self.atom_to_asins and not refers_to_active_clue:
+                self._add_clue(
+                    state,
+                    evaluator_clean(message),
+                    "catalog_fallback",
+                )
+                return
+            self._apply_negation(state, parsed.payload)
             return
 
-        requirement_match = re.search(
-            r"a key requirement is:\s*(.+)$",
-            message,
-            flags=re.IGNORECASE,
-        )
-        if requirement_match:
-            self._add_clue(state, requirement_match.group(1), "initial_requirement")
+        if parsed.action == "add" and parsed.payload:
+            source = parsed.source or "revealed"
+            if source == "compact_initial_preference":
+                candidates, _kind = self._clue_candidates(parsed.payload)
+                if candidates:
+                    self._add_clue(state, parsed.payload, "initial_preference")
+                return
+            parts = (
+                self._split_revealed_payload(parsed.payload)
+                if source == "revealed"
+                else [parsed.payload]
+            )
+            for part in parts:
+                self._add_clue(state, part, source)
             return
 
-        # Override sessions append one soft preference after the category
-        # sentence. Store it separately so a later override can retire it from
-        # current intent without discarding non-conflicting target evidence.
-        if category_match and "." in message and "still exploring" not in lowered:
-            remainder = message.split(".", 1)[1]
-            self._add_clue(state, remainder, "initial_preference")
+        if parsed.action == "ignore":
+            return
+
+        # Last-resort wrapper tolerance: recover exact catalog phrases without
+        # rewriting them.  Single-token constraints still require an explicit
+        # payload cue or a reply made entirely of that catalog atom, which
+        # avoids treating generic wrapper words as evidence.
+        category = parsed.category or state.category
+        message_tokens = WORD_RE.findall(message)
+        allow_singletons = (
+            len(message_tokens) == 1
+            and normalize(message) in self.atom_to_asins
+        )
+        for phrase in self._catalog_phrases_in_message(
+            message,
+            category,
+            allow_singletons=allow_singletons,
+        ):
+            self._add_clue(state, phrase, "catalog_fallback")
 
     def _rank(self, state: Session) -> list[str]:
         category_key = normalize(state.category)
@@ -567,7 +623,11 @@ class Agent:
         # may narrow that active pool only when compatible, so a stale/noisy
         # clue can never displace every candidate satisfying the new override.
         ordered_evidence = sorted(
-            useful,
+            (
+                item
+                for item in useful
+                if item[0].source != "catalog_fallback"
+            ),
             key=lambda item: (not item[0].active, len(item[1])),
         )
         for _clue, matches, _kind in ordered_evidence:
@@ -662,7 +722,7 @@ class Agent:
             raise RuntimeError("reset must be called before respond")
 
         state = self.sessions[session_id]
-        self._parse(state, user_message)
+        self._parse(state, user_message, turn)
 
         ranked = self._rank(state)
         limit = self._recommendation_limit(turn, top_k)
