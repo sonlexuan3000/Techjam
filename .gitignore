@@ -1,16 +1,22 @@
-node_modules/
-dist/
-.env
-.env.production
-.data/
-.local/
-data/
-workspaces/
-codex-home/
-coverage/
-*.log
-*.tsbuildinfo
+__pycache__/
+*.py[cod]
 .DS_Store
-deploy/volcengine/.terraform/
-deploy/volcengine/*.tfstate*
-deploy/volcengine/terraform.tfvars
+.env
+.venv/
+results.json
+data/catalog.jsonl
+data/catalog.jsonl.gz
+data/*.part
+SHA256SUMS
+data/releases/
+# Organizer-only code, private evaluation data, manifests, and build reports.
+organizer/
+secure/
+# Internal provenance and release-audit working documents.
+docs/audits/
+docs/data_selection_audit.md
+docs/participant_release_checklist.md
+# Organizer-only pipeline tests.
+tests/test_5core_builder.py
+tests/test_organizer_pipeline.py
+*.log

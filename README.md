@@ -1,251 +1,166 @@
-# Volc Agent Launchpad
+# TechJam Conversational E-Commerce Search Challenge
 
-A minimal Agent platform for three-day middleware hackathons. It provides Agent
-CRUD, a browser Playground, persistent workspaces, and Codex CLI backed by the
-Volcengine Ark Responses API.
+Build an AI shopping agent that asks useful follow-up questions and recommends the customer's hidden target product within at most 10 turns.
 
-Run it locally with Docker, Colima, or rootless Podman, or deploy it to
-Volcengine ECS.
+This is the team's Track 4 repository. The previous Track 1 code is preserved on
+`archive/track1-before-track4-20260828`; `main` now contains only the Shopping
+Copilot participant kit, the current deterministic agent, and shared evaluation
+tooling.
 
-> [!WARNING]
-> This is a single-user proof of concept. It intentionally has no identity,
-> tracing, audit, or hardened sandbox middleware. Do not use production data or
-> credentials. See [SECURITY.md](SECURITY.md).
+## Team Quick Start
 
-## Screenshots
-
-### Agent Playground
-
-![Agent Playground showing lifecycle controls, starter prompts, and the Codex Runtime](docs/assets/playground.jpg)
-
-### Create an Agent
-
-![Create Agent form with name, description, and workspace instructions](docs/assets/create-agent.jpg)
-
-## Features
-
-- React and TypeScript Web UI
-- Agent create, edit, start, stop, delete, and multi-turn chat
-- Fastify control plane with asynchronous Run state
-- Persistent Agent workspaces and Codex sessions
-- Disposable Docker, Colima, or Podman container for each local turn
-- Docker and Terraform deployment paths for Volcengine ECS
-
-## Requirements
-
-- Node.js 22+
-- npm 10+
-- Docker, Colima, or Podman
-- A Volcengine Ark API key and endpoint that supports the Responses API
-
-Codex CLI is included in the Runtime image and is not required on the host.
-
-## Local browser SOP
-
-### 1. Check the local tools
-
-Install Node.js 22+ and one supported container engine, then verify them:
+Python 3.10 or newer is recommended. No API key is required for the current
+baseline.
 
 ```bash
-node --version
-npm --version
-docker --version        # Docker Desktop, Docker Engine, or Colima
-podman --version        # Use this instead when running Podman
+make setup
+make test
+make evaluate
 ```
 
-Only one container engine is required. Codex CLI is already included in the
-Runtime image.
-
-### 2. Clone the repository
+Generate the same target-disjoint test suites on every teammate's machine:
 
 ```bash
-git clone <repository-url> volc-agent-launchpad
-cd volc-agent-launchpad
+make unseen-data
+make evaluate-unseen-dev
+make stress
 ```
 
-Skip this step when already working from the repository root.
+`make unseen-data` deterministically builds 2,000 shared dev sessions and 800
+shared regression sessions from official catalog products that are not public-set
+targets. Generated files stay ignored; the committed generator and fixed seed
+make them reproducible. They are robustness tests, not leaked or predicted
+organizer-private data. Read [data/unseen_eval/README.md](data/unseen_eval/README.md)
+before using the second split.
 
-### 3. Start the POC
+Team ownership, module boundaries, and PR rules are in
+[docs/TEAM_ROLES.md](docs/TEAM_ROLES.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Current Working Baseline
+
+Verified locally on 28 August 2026:
+
+| Suite | Sessions | Hit Rate@10 | MRR | MTTC | Score |
+|---|---:|---:|---:|---:|---:|
+| Official public | 200 | 0.995 | 0.952548 | 2.0700 | 0.961864 |
+| Shared synthetic dev | 2,000 | 0.987 | 0.853885 | 2.7005 | 0.915655 |
+| Paraphrase stress | 200 | 0.230 | 0.065052 | 9.8650 | 0.157216 |
+
+The synthetic-dev result suggests the retrieval/ranking strategy transfers to
+new catalog targets. The large paraphrase drop shows that input parsing is the
+current P0 weakness. Stress results are diagnostics, not a claim about private
+test wording. See [docs/TEAM_BASELINE.md](docs/TEAM_BASELINE.md).
+
+## What You Receive
+
+- A frozen catalog of 50,000 products from the `Clothing_Shoes_and_Jewelry` category of Amazon Reviews 2023.
+- 200 labeled public sessions for local development.
+- A weak BM25 starter agent and deterministic local evaluator.
+- The Agent API contract and scoring rules.
+
+The organizer keeps 800 additional sessions private for final evaluation.
+
+## Task
+
+For each session, your agent receives an anonymized preference profile and a short customer message. Raw user IDs, review text, timestamps, and purchase history are never disclosed. On every turn the agent may:
+
+- ask a natural clarification question in `message` and identify one requested field in `ask_attribute`;
+- return a ranked list of up to 10 catalog `parent_asin` values;
+- do both in the same response.
+
+The session ends when the target product appears in the scored Top 10 or after turn 10. Sessions cover Buying, Browsing, Intent Override, and Boundary behavior.
+
+## Download the Catalog
+
+Download `catalog.jsonl.gz` from the GitHub Release attached to this repository, then run:
 
 ```bash
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
-npm run poc
+gzip -dk catalog.jsonl.gz
+mv catalog.jsonl data/catalog.jsonl
 ```
 
-The first run installs Node.js dependencies and builds the Runtime image. The
-script automatically selects Docker, Colima, or Podman.
+Verify the downloaded file using the published `SHA256SUMS` file.
 
-### 4. Open the browser
+## Run the Starter
 
-Visit <http://localhost:3000>, or open it from the terminal:
+Python 3.10 or later is recommended. The starter uses only the Python standard library.
 
 ```bash
-open http://localhost:3000       # macOS
-xdg-open http://localhost:3000   # Linux desktop
+python3 -m evaluator.local_evaluator
 ```
 
-In the Web UI:
+Edit the team-owned modules and keep `starter/agent.py` as the official adapter.
+Do not edit the evaluator or public labels when reporting a local score.
+The command writes per-session results and aggregate metrics to `results.json`.
 
-1. Select **Create Agent**.
-2. Enter a name, description, and workspace instructions.
-3. Select **Create Agent** again.
-4. Enter a task in the Playground, for example:
+The organizer's weak starter scores Hit Rate@10 `0.125`, MRR `0.068034`, and
+MTTC `9.81` on the released public set; see `docs/baseline_results.json`. The
+current `starter/agent.py` is the team's stronger deterministic working baseline,
+so run `make evaluate` for its current score.
 
-   ```text
-   Create a TypeScript hello-world CLI, add a test, and run it.
-   ```
+## Agent Interface
 
-The Agent can write files, run commands, and continue the same Codex session in
-later messages.
+```python
+class Agent:
+    def reset(self, session_id: str, user_profile: dict) -> None:
+        ...
 
-### 5. Stop and resume
-
-Press `Ctrl+C` in the startup terminal. The script removes temporary Runtime
-containers but keeps Agent workspaces and conversations.
-
-- macOS state: `~/.volc-agent-launchpad/`
-- Linux state: `.local/`
-- Custom location: set `LOCAL_POC_DATA_ROOT`
-
-Run the same `npm run poc` command to continue later.
-
-### Select a specific container engine
-
-Force Podman when multiple engines are installed:
-
-```bash
-CONTAINER_ENGINE=podman \
-ARK_API_KEY=your-ark-api-key \
-ARK_MODEL=ep-your-endpoint-id \
-npm run poc
+    def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict:
+        return {
+            "message": "Do you have a material preference?",
+            "ask_attribute": "material",
+            "recommendations": [
+                {"parent_asin": "B000..."},
+                {"parent_asin": "B001..."}
+            ],
+            "usage": {"prompt_tokens": 120, "completion_tokens": 30}
+        }
 ```
 
-Colima uses `CONTAINER_ENGINE=docker` because it exposes the Docker CLI.
+`ask_attribute` is one of `category`, `material`, `color`, `size`, `style`, `brand`, `budget`, `feature`, `use_case`, `other`, or `null`. See `docs/agent_api_contract.json`.
 
-For a clean Linux host, follow the
-[rootless Podman setup](docs/LOCAL_POC.md#rootless-podman-on-linux).
+## Technical Metrics
 
-## Docker Compose
+- **Hit Rate@10:** fraction of sessions that find the target within 10 turns.
+- **MRR:** mean reciprocal rank of the target; a miss contributes zero.
+- **MTTC:** mean first-hit turn; a miss is assigned turn 11.
+- **Reported token usage:** prompt and completion tokens returned by the team's model client.
 
-Create and edit the configuration:
-
-```bash
-./scripts/bootstrap-local.sh
+```text
+TechnicalScore = 0.50 × HitRate@10 + 0.30 × MRR + 0.20 × Efficiency
+Efficiency = clip((11 - MTTC) / 10, 0, 1)
 ```
 
-Required values in `.env`:
+Only exact `parent_asin` equality produces a hit. Core metrics are also reported by scenario.
 
-```dotenv
-ARK_API_KEY=your-ark-api-key
-ARK_MODEL=ep-your-endpoint-id
-APP_AUTH_TOKEN=replace-with-at-least-24-random-characters
+## Model Choice and Cost
+
+Teams may use any legally accessible LLM API or local model. Teams manage their own credentials and must never commit API keys. Model choice, estimated cost, token usage, and latency must be disclosed. Token usage is a feasibility metric, not part of the core technical score. The organizer does not provide or reimburse model API credits; teams are responsible for any costs incurred through optional external services.
+
+## Files
+
+```text
+data/public_set.jsonl             200 labeled development sessions
+data/unseen_eval/                 ignored, reproducible shared test outputs
+docs/competition_specification.md participant rules and evaluation protocol
+docs/agent_api_contract.json      machine-readable Agent contract
+docs/evaluation_config.json       scoring configuration
+docs/baseline_results.json        reproducible weak-starter reference score
+docs/TEAM_BASELINE.md             verified team metrics and caveats
+docs/TEAM_ROLES.md                five-person ownership and module contracts
+scripts/build_unseen_official_sessions.py deterministic shared test generator
+scripts/run_paraphrase_stress_eval.py      input-language robustness test
+starter/agent.py                  official interface and current team baseline
+evaluator/local_evaluator.py      public-set simulator and scorer
 ```
 
-Start the application:
+## Judging and Submission Policy
 
-```bash
-docker compose up --build
-```
+- Participant submission requirements: `docs/submission_rules.md`
+- Event rules and working checklist: `TECHJAM_PLAN.md`
+- Team workflow: `CONTRIBUTING.md`
 
-Open <http://localhost:3000>. Stop it without deleting Agent data:
+## Data Source
 
-```bash
-docker compose down
-```
-
-## Development
-
-```bash
-npm install
-cp .env.example .env
-npm install --global @openai/codex@0.111.0
-npm run dev
-```
-
-- Web UI: <http://localhost:5173>
-- API: <http://localhost:3000>
-
-Use local paths in `.env` when running outside Docker:
-
-```dotenv
-APP_DATA_DIR=.data
-AGENT_WORKSPACE_ROOT=workspaces
-CODEX_HOME=codex-home
-```
-
-## Deployment
-
-- [Existing Linux ECS with Docker](docs/DEPLOYMENT.md#existing-linux-ecs)
-- [Complete Volcengine environment with Terraform](docs/DEPLOYMENT.md#terraform-deployment)
-- [Local Docker, Colima, and Podman details](docs/LOCAL_POC.md)
-
-The existing-ECS script deploys from the current source tree:
-
-```bash
-cp .env.example .env.production
-./scripts/deploy-existing-ecs.sh .env.production
-```
-
-The Terraform path provisions VPC, subnet, security group, ECS, and EIP:
-
-```bash
-cp deploy/volcengine/terraform.tfvars.example \
-  deploy/volcengine/terraform.tfvars
-./scripts/deploy-volcengine.sh
-```
-
-## Configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `ARK_API_KEY` | Required | Ark model API key. |
-| `ARK_MODEL` | Required | Responses-capable endpoint or model ID. |
-| `ARK_BASE_URL` | Beijing v3 endpoint | Ark OpenAI-compatible API URL. |
-| `APP_AUTH_TOKEN` | Empty on loopback | Shared demo token; use 24+ random characters remotely. |
-| `RUNTIME_PROVIDER` | `local-process` | `container` for disposable local Runtime containers. |
-| `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
-| `CODEX_TIMEOUT_MS` | `600000` | Maximum duration of one turn. |
-| `LOCAL_POC_DATA_ROOT` | Platform-specific | Local metadata, workspace, and session directory. |
-
-See [.env.example](.env.example) for all Runtime and resource-limit options.
-
-## How it works
-
-```mermaid
-flowchart LR
-    UI["React Web UI"] --> API["Fastify control plane"]
-    API --> Store["JSON metadata and Agent workspaces"]
-    API --> Runtime{"Runtime provider"}
-    Runtime -->|Local POC| Container["Disposable Docker / Colima / Podman container"]
-    Runtime -->|ECS profile| Codex["Codex CLI in application container"]
-    Container --> Ark["Volcengine Ark Responses API"]
-    Codex --> Ark
-```
-
-The first turn uses `codex exec`; later turns resume the stored Codex thread.
-Deleting an Agent archives its workspace under `workspaces/.deleted/`.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for component and extension
-boundaries.
-
-## Validation
-
-```bash
-npm run check
-terraform fmt -check -recursive deploy/volcengine
-docker compose config
-```
-
-## Documentation
-
-- [Architecture](docs/ARCHITECTURE.md)
-- [Local POC](docs/LOCAL_POC.md)
-- [Deployment](docs/DEPLOYMENT.md)
-- [Hackathon extension guide](docs/HACKATHON_EXTENSION_GUIDE.md)
-- [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
-
-## License
-
-[MIT](LICENSE)
+The catalog and sessions are derived from Amazon Reviews 2023 by McAuley Lab, UCSD. See `DATA_ATTRIBUTION.md` before using or redistributing the data.
+Sessions are sampled deterministically from the official Clothing 5-core leave-last-out split and joined to the frozen catalog.
