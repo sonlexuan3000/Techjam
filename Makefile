@@ -2,19 +2,24 @@ PYTHON ?= python3
 VENV_PYTHON := .venv/bin/python
 UNSEEN_SEED ?= techjam-unseen-v1
 UNSEEN_DIR := data/unseen_eval
+ENTRYPOINT ?=
 
 .PHONY: help setup data test evaluate check unseen-data evaluate-unseen-dev \
-	evaluate-unseen-holdout stress benchmark
+	evaluate-candidate-dev evaluate-unseen-holdout human-stress stress benchmark \
+	integration-check
 
 help:
 	@echo "make setup                    Create .venv and fetch the official catalog"
 	@echo "make test                     Run fast unit/contract tests"
-	@echo "make evaluate                 Evaluate the public 200 sessions"
+	@echo "make evaluate                 Integration-only check on organizer public 200"
 	@echo "make unseen-data              Reproduce shared 2,000 dev + 800 regression sessions"
 	@echo "make evaluate-unseen-dev      Evaluate the generated shared dev split"
+	@echo "make evaluate-candidate-dev   Evaluate ENTRYPOINT on generated shared dev"
 	@echo "make evaluate-unseen-holdout  Evaluate the shared second split after freezing code"
-	@echo "make stress                   Run deterministic paraphrase stress evaluation"
-	@echo "make benchmark                Run unit, public, unseen-dev, and stress checks"
+	@echo "make human-stress             Run independent 100-case NLP benchmark"
+	@echo "make stress                   Run wrapper stress on generated shared dev"
+	@echo "make benchmark                Run candidate-safe checks (never public 200)"
+	@echo "make integration-check        Run tests + public 200 after winners are frozen"
 
 setup: $(VENV_PYTHON) data
 
@@ -28,9 +33,12 @@ test: $(VENV_PYTHON)
 	$(VENV_PYTHON) -m unittest discover -v
 
 evaluate: data
+	@test "$(PUBLIC_INTEGRATION)" = "1" || \
+		(echo "Blocked: use generated tests for candidates; only run 'make integration-check' after winners are frozen."; exit 2)
+	@echo "Running organizer public 200 as a frozen integration regression only."
 	$(VENV_PYTHON) -m evaluator.local_evaluator
 
-check: test evaluate
+check: benchmark
 
 unseen-data: data
 	@if [ -f "$(UNSEEN_DIR)/dev_set.jsonl" ] && \
@@ -48,16 +56,31 @@ evaluate-unseen-dev: unseen-data
 		--dataset $(UNSEEN_DIR)/dev_set.jsonl \
 		--output $(UNSEEN_DIR)/dev_results.json
 
+evaluate-candidate-dev: unseen-data
+	@test -n "$(ENTRYPOINT)" || \
+		(echo "Set ENTRYPOINT=experiments/algo/<owner>-<approach>/entrypoint.py"; exit 2)
+	$(VENV_PYTHON) scripts/evaluate_candidate.py \
+		--entrypoint "$(ENTRYPOINT)" \
+		--catalog data/catalog.jsonl \
+		--dataset $(UNSEEN_DIR)/dev_set.jsonl \
+		--output $(UNSEEN_DIR)/candidate_dev_results.json
+
 evaluate-unseen-holdout: unseen-data
 	$(VENV_PYTHON) -m evaluator.local_evaluator \
 		--catalog data/catalog.jsonl \
 		--dataset $(UNSEEN_DIR)/holdout_set.jsonl \
 		--output $(UNSEEN_DIR)/holdout_results.json
 
-stress: data
+human-stress: data
+	$(VENV_PYTHON) scripts/evaluate_independent_paraphrases.py $(if $(strip $(ENTRYPOINT)),--entrypoint "$(ENTRYPOINT)",)
+
+stress: unseen-data
 	$(VENV_PYTHON) scripts/run_paraphrase_stress_eval.py \
 		--catalog data/catalog.jsonl \
-		--dataset data/public_set.jsonl \
-		--output $(UNSEEN_DIR)/public_paraphrase_stress_results.json
+		--dataset $(UNSEEN_DIR)/dev_set.jsonl \
+		--output $(UNSEEN_DIR)/dev_paraphrase_stress_results.json $(if $(strip $(ENTRYPOINT)),--entrypoint "$(ENTRYPOINT)",)
 
-benchmark: test evaluate evaluate-unseen-dev stress
+benchmark: test evaluate-unseen-dev human-stress
+
+integration-check: test
+	$(MAKE) PUBLIC_INTEGRATION=1 evaluate

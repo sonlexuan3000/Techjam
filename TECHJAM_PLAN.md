@@ -58,8 +58,14 @@ Commands:
 ```bash
 make setup
 make test
-make evaluate
+make unseen-data
+make evaluate-unseen-dev
+make human-stress
 ```
+
+These are the shared candidate-development checks. Do not tune or choose a
+candidate using `make evaluate`/the organizer public 200; the integration owner
+runs that only after the NLP and algorithm winners are frozen.
 
 ## Recommended MVP architecture
 

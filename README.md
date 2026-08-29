@@ -15,16 +15,26 @@ baseline.
 ```bash
 make setup
 make test
-make evaluate
+make unseen-data
 ```
 
-Generate the same target-disjoint test suites on every teammate's machine:
+Use the same generated tests on every teammate's machine:
 
 ```bash
-make unseen-data
+# Current shared baseline
 make evaluate-unseen-dev
-make stress
+make human-stress
+
+# Isolated candidates under experiments/
+make evaluate-candidate-dev ENTRYPOINT=experiments/algo/<owner>-<approach>/entrypoint.py
+make human-stress ENTRYPOINT=experiments/nlp/<owner>-<approach>/entrypoint.py
 ```
+
+Do **not** use `data/public_set.jsonl` or `make evaluate` to tune code, compare
+candidates, or choose a winner. NLP candidates are selected on the independent
+100-case human-style fixture; algorithm candidates are selected on the 2,000
+generated-dev sessions. Only the integration owner runs the organizer public
+200 after both winners are frozen, as a final protocol/regression check.
 
 `make unseen-data` deterministically builds 2,000 shared dev sessions and 800
 shared regression sessions from official catalog products that are not public-set
@@ -45,9 +55,9 @@ Verified locally on 28 August 2026:
 
 | Suite | Sessions | Hit Rate@10 | MRR | MTTC | Score |
 |---|---:|---:|---:|---:|---:|
-| Official public | 200 | 0.995 | 0.954631 | 2.0750 | 0.962389 |
+| Official public, historical reference only | 200 | 0.995 | 0.954631 | 2.0750 | 0.962389 |
 | Shared synthetic dev | 2,000 | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
-| Paraphrase stress | 200 | 0.995 | 0.952964 | 2.0900 | 0.961589 |
+| Public-derived wrapper stress, historical only | 200 | 0.995 | 0.952964 | 2.0900 | 0.961589 |
 
 The synthetic-dev result suggests the retrieval/ranking strategy transfers to
 new catalog targets. The dependency-free lightweight parser closes the previous
@@ -125,8 +135,9 @@ The command writes per-session results and aggregate metrics to `results.json`.
 
 The organizer's weak starter scores Hit Rate@10 `0.125`, MRR `0.068034`, and
 MTTC `9.81` on the released public set; see `docs/baseline_results.json`. The
-current `starter/agent.py` is the team's stronger deterministic working baseline,
-so run `make evaluate` for its current score.
+current `starter/agent.py` is the team's stronger deterministic working baseline.
+Those public numbers are retained as historical references, not as candidate
+selection metrics; `make evaluate` is reserved for the frozen integration build.
 
 ## Agent Interface
 
@@ -182,6 +193,9 @@ docs/EXPERIMENT_WORKFLOW.md       isolated candidate and PR/MR rules
 experiments/                      competing NLP and algorithm implementations
 scripts/build_unseen_official_sessions.py deterministic shared test generator
 scripts/run_paraphrase_stress_eval.py      input-language robustness test
+scripts/evaluate_candidate.py              isolated generated-dev candidate runner
+scripts/evaluate_independent_paraphrases.py independent 100-case NLP runner
+tests/fixtures/independent_human_paraphrases.jsonl frozen human-style NLP cases
 starter/agent.py                  official interface and current team baseline
 starter/parser.py                 dependency-free lightweight input parser
 evaluator/local_evaluator.py      public-set simulator and scorer

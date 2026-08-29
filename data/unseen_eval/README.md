@@ -67,16 +67,20 @@ untracked so target mappings are not accidentally published.
 
 ## Paraphrase stress test
 
-The official local simulator uses fixed message wrappers. To detect a parser
-that has memorized those wrappers, run the separate deterministic stress test:
+Use the frozen independent 100-case human-style fixture as the primary NLP
+comparison. It mixes exact catalog values inside unfamiliar wrappers and
+value-level semantic paraphrases:
 
 ```bash
-python scripts/run_paraphrase_stress_eval.py \
-  --catalog data/catalog.jsonl \
-  --dataset data/public_set.jsonl \
-  --output data/unseen_eval/public_paraphrase_stress_results.json
+make human-stress
+make human-stress ENTRYPOINT=experiments/nlp/<owner>-<approach>/entrypoint.py
 ```
 
-This preserves targets, constraint strings, disclosure order, scenario timing,
-and scoring, but changes the surrounding natural language. Its result is a
-robustness diagnostic, not an official or private-score estimate.
+For a larger exact-value wrapper check on the generated 2,000-session dev set,
+run `make stress ENTRYPOINT=experiments/nlp/<owner>-<approach>/entrypoint.py`.
+Neither test is organizer data or a private-score estimate. Both are visible
+development fixtures, so do not special-case individual cases.
+
+Do not point the stress runner at `data/public_set.jsonl` while developing or
+selecting candidates. The organizer public 200 is reserved for the frozen
+integration owner check.

@@ -2,7 +2,7 @@
 
 ## Before coding
 
-1. Run `make setup`, `make test`, and `make evaluate`.
+1. Run `make setup`, `make test`, and `make unseen-data`.
 2. Read `docs/TEAM_ROLES.md` and stay inside the agreed module ownership.
 3. For a competing implementation, branch from `main` as
    `exp/nlp/<owner>-<approach>` or `exp/algo/<owner>-<approach>`. Use a normal
@@ -55,8 +55,8 @@ Every NLP or algorithm experiment PR should include:
 - experiment type and folder path;
 - the exact baseline commit used for comparison;
 - the hypothesis and files changed;
-- public score before and after;
-- generated-dev score before and after;
+- independent 100-case state/grounding result before and after for NLP;
+- generated-dev score before and after for algorithms;
 - scenario-level regressions, if any;
 - Target Survival Rate and False Elimination Rate for filtering changes;
 - candidate-pool size before/after each newly applied constraint;
@@ -67,18 +67,28 @@ Use the repository PR template. Report regressions as well as improvements;
 do not tune an implementation after seeing a sealed comparison set and then
 report that same set as unseen.
 
-Run at least:
+Never run `make evaluate`, inspect public per-session failures, or use the
+organizer 200 to tune/select an experiment. Run the commands for your candidate
+type instead:
 
 ```bash
 make test
-make evaluate
+
+# NLP candidate and its shared baseline
+make human-stress
+make human-stress ENTRYPOINT=experiments/nlp/<owner>-<approach>/entrypoint.py
+
+# Algorithm candidate and its shared baseline
 make evaluate-unseen-dev
+make evaluate-candidate-dev ENTRYPOINT=experiments/algo/<owner>-<approach>/entrypoint.py
 ```
 
-Use `make stress` for any input-parser change. The committed seed is visible, so
-the generated 800-row split is only a shared regression check, not a truly hidden
-holdout. If the team wants one internal sealed check, the evaluation owner should
-generate it with a separate uncommitted seed and report only aggregate metrics.
+The independent 100-case NLP fixture is model-generated and visible, so do not
+add rules for individual case IDs. The committed generated-data seed is also
+visible; the 800-row second split is only a shared regression check, not a truly
+hidden holdout. If the team wants one internal sealed check, the evaluation
+owner should generate it with a separate uncommitted seed and report only
+aggregate metrics.
 
 Any PR that turns an inferred or soft constraint into a permanent hard deletion
 must explain why the target remains recoverable when parsing or metadata is
@@ -95,7 +105,10 @@ owner and every affected module owner before merge.
 Merging an experiment folder makes it available for comparison; it does not make
 that implementation the official Agent. After the comparison is frozen, the
 integration owner opens a separate integration PR for the selected NLP variant,
-the selected algorithm variant, and then benchmarks their combination.
+the selected algorithm variant, and then benchmarks their combination. Only
+that frozen integration PR runs `make integration-check` on the organizer public
+200. A surprise there is investigated as an integration/protocol bug; it does
+not reopen candidate tuning on the public cases.
 
 The event build window starts on 29 August 2026 at 12:00 Singapore time. Keep
 the migration/setup commit separate, and make substantive implementation commits

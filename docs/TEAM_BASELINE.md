@@ -7,24 +7,43 @@ prediction.
 
 | Suite | Sessions | Hit Rate@10 | MRR | MTTC | Technical score |
 |---|---:|---:|---:|---:|---:|
-| Official public set | 200 | 0.995 | 0.954631 | 2.0750 | 0.962389 |
+| Official public set, historical only | 200 | 0.995 | 0.954631 | 2.0750 | 0.962389 |
 | Shared synthetic dev | 2,000 | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
-| Deterministic paraphrase stress | 200 | 0.995 | 0.952964 | 2.0900 | 0.961589 |
+| Public-derived paraphrase stress, historical only | 200 | 0.995 | 0.952964 | 2.0900 | 0.961589 |
 
-Reproduce:
+Candidate-safe reproduction:
 
 ```bash
 make setup
 make test
-make evaluate
 make unseen-data
 make evaluate-unseen-dev
-make stress
+make human-stress
 ```
 
-Thirty-one unit/contract tests pass. The synthetic generator selected 2,800
+Do not reproduce the two historical public-derived rows while developing a
+candidate. They are not selection metrics. Only the integration owner runs
+`make integration-check` after both winners and their settings are frozen.
+
+Thirty-nine unit/contract tests pass. The synthetic generator selected 2,800
 unique targets with at least four generated constraints; public/dev/second-split
 target overlap was zero and all scenario-mix checks passed.
+
+The new independent NLP diagnostic gives a deliberately harder picture of the
+current baseline:
+
+| Diagnostic | Passed | Rate |
+|---|---:|---:|
+| Category extraction | 1 / 100 | 1.0000% |
+| Positive-fact extraction | 14 / 87 | 16.0920% |
+| Negation/override deactivation | 1 / 34 | 2.9412% |
+| Exact-value wrapper grounding | 52 / 52 | 100.0000% |
+| Semantic-paraphrase grounding | 1 / 35 | 2.8571% |
+| Full case, state plus grounding | 1 / 100 | 1.0000% |
+
+These are parser/grounding diagnostics over generated-dev targets with zero
+organizer-public target overlap. They are not the Technical Score and must not
+be presented as an estimate of organizer-private performance.
 
 ## Interpretation
 

@@ -24,9 +24,10 @@ Experiment folder (if applicable): `experiments/...`
 
 | Suite | Baseline | This PR | Delta |
 |---|---:|---:|---:|
-| Public Technical Score | | | |
-| Generated-dev Technical Score | | | |
+| Independent human-style 100 (NLP) | | | |
+| Generated-dev 2,000 (algorithm) | | | |
 | Relevant robustness benchmark | | | |
+| Organizer public 200 (integration PR only) | n/a | n/a | n/a |
 
 - Scenario regressions:
 - Target survival / false elimination, if filtering changed:
@@ -47,7 +48,9 @@ List known failures, ambiguous cases, and every metric that became worse.
 - [ ] I added focused tests for the changed behavior.
 - [ ] I used the same frozen inputs and base commit as competing candidates.
 - [ ] I reported regressions and did not tune on a claimed unseen set.
+- [ ] I did not use or inspect organizer-public per-case results to tune or
+      select this candidate.
 - [ ] `make test` passes.
-- [ ] `make evaluate` passes.
-- [ ] `make evaluate-unseen-dev` was run for an algorithm change.
-- [ ] `make stress` was run for an NLP change.
+- [ ] `make human-stress ENTRYPOINT=...` was run for an NLP experiment.
+- [ ] `make evaluate-candidate-dev ENTRYPOINT=...` was run for an algorithm experiment.
+- [ ] `make integration-check` was run only if this is the frozen winner-integration PR.

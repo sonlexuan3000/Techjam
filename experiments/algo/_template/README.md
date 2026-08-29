@@ -22,15 +22,14 @@ What ranking, filtering, question, or Top-K decision should improve the score?
 the official `reset`/`respond` interface.
 
 ```bash
-# Exact commands used to reproduce every row below
+make evaluate-unseen-dev
+make evaluate-candidate-dev ENTRYPOINT=experiments/algo/<owner>-<approach>/entrypoint.py
 ```
 
 ## Results
 
 | Suite | HR@10 | MRR | MTTC | Technical Score |
 |---|---:|---:|---:|---:|
-| Public baseline | | | | |
-| Public candidate | | | | |
 | Generated-dev baseline | | | | |
 | Generated-dev candidate | | | | |
 
@@ -39,6 +38,9 @@ the official `reset`/`respond` interface.
 - False Elimination Rate:
 - Mean/p95 turn latency:
 - Startup time and memory:
+
+Do not run the organizer public 200 for this candidate. The integration owner
+runs it only after the NLP and algorithm winners are frozen.
 
 ## Ablation
 

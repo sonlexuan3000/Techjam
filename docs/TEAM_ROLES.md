@@ -68,8 +68,9 @@ Tier B: matches most constraints or misses an uncertain constraint
 Tier C: category-relevant recovery candidates
 ```
 
-Freeze the current 99% public path as a golden regression before changing its
-behavior.
+Preserve the current behavior with focused unit tests. Treat the existing 99%
+public number as a historical integration reference; tune this module on
+generated-dev, not on the organizer 200.
 
 Target modules: `starter/search.py`, `starter/filtering.py`,
 `starter/ranking.py`, `starter/policy.py`, `tests/test_filtering.py`,
@@ -112,7 +113,7 @@ Target modules: `starter/catalog.py`, `starter/matcher.py`,
 
 Owns reproducibility and tries to break the full pipeline:
 
-- public, generated-dev, second-split, and paraphrase benchmarks;
+- generated-dev, second-split, and independent paraphrase benchmarks;
 - paraphrased wrappers and paraphrased values;
 - typos, multiple preferences in one sentence, negation, and no preference;
 - overrides in the same slot and across different slots;
@@ -144,7 +145,8 @@ Owns the official surface and prevents merge conflicts:
 - shared contracts and conversation-state lifecycle;
 - simple natural-language response templates and explanations;
 - CI, Makefile, dependencies, README, demo, and submission packaging;
-- final benchmark, merge coordination, and release checks.
+- final benchmark, merge coordination, and release checks;
+- the one organizer-public run after candidate winners and settings are frozen.
 
 Only this owner resolves changes to `starter/agent.py`. Output NLP is light:
 `ask_attribute` drives the simulator, so clear templates are enough.
@@ -184,12 +186,16 @@ owner makes a reversible ranking/filtering decision.
 
 ## Implementation order
 
-1. Freeze the current public/generated scores and behavior as golden tests.
+1. Freeze shared generated/NLP fixtures and preserve current behavior in unit tests.
 2. Agree on `ParsedConstraint`, `ConstraintMatch`, and `SearchResult` schemas.
 3. Build parser, semantic matcher, and adversarial fixtures in parallel.
 4. Have the core search owner consume match scores without changing policy first.
 5. Compare exact-only, semantic-score, tiered, and relaxed-filter variants.
 6. Tune `other` and information-gain policy only after target survival is safe.
+
+Candidate owners never use the organizer public 200 for tuning or selection.
+After steps 1–6 choose the winners on the independent NLP 100 and generated-dev;
+then role 5 runs the public set only as a frozen integration/protocol check.
 
 This keeps three people on meaningful algorithm work without duplicating the
 friend's existing filter/ranker/policy implementation.

@@ -37,6 +37,7 @@ from evaluator.local_evaluator import (  # noqa: E402
     normalize_recommendations,
 )
 from starter.agent import Agent  # noqa: E402
+from scripts.evaluate_candidate import load_candidate  # noqa: E402
 
 
 STRESS_TEST_NOTE = (
@@ -420,10 +421,14 @@ def evaluate_stress(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog", default="data/catalog.jsonl")
-    parser.add_argument("--dataset", default="data/public_set.jsonl")
+    parser.add_argument("--dataset", default="data/unseen_eval/dev_set.jsonl")
     parser.add_argument(
         "--output",
-        default="data/unseen_eval/public_paraphrase_stress_results.json",
+        default="data/unseen_eval/dev_paraphrase_stress_results.json",
+    )
+    parser.add_argument(
+        "--entrypoint",
+        help="optional experiment entrypoint.py exposing build_agent(catalog_path)",
     )
     return parser.parse_args()
 
@@ -432,13 +437,20 @@ def main() -> None:
     args = parse_args()
     samples = load_jsonl(args.dataset)
     catalog_ids, categories, products = catalog_index(args.catalog)
+    if args.entrypoint:
+        agent, entrypoint_path = load_candidate(args.entrypoint, args.catalog)
+        candidate_name = str(entrypoint_path)
+    else:
+        agent = Agent(args.catalog)
+        candidate_name = "starter.agent:Agent"
     result = evaluate_stress(
-        Agent(args.catalog),
+        agent,
         samples,
         catalog_ids,
         categories,
         products,
     )
+    result = {"candidate": candidate_name, "dataset": args.dataset, **result}
     Path(args.output).write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",

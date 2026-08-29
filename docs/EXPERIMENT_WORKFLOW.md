@@ -96,6 +96,24 @@ The returned Agent must follow `docs/agent_api_contract.json`. An NLP candidate
 may wrap the current ranking policy; an algorithm candidate may wrap the current
 parser. This isolates the component being compared.
 
+The independent NLP runner also needs diagnostic-only methods so it can score
+state extraction and grounding without guessing from final recommendations:
+
+```python
+def debug_state(session_id: str) -> dict:
+    ...
+
+def debug_clue_candidates(clue: str, *, category: str | None = None) -> set[str]:
+    ...
+```
+
+`debug_state` uses the active baseline's category/current-intent/negative/history
+shape. The grounding set should include plausible matches but must be selective;
+it must contain the concrete target, cover at least 25% route-aware catalog
+reference precision, and stay below 25% of the full catalog. Returning the whole
+catalog or the same 100 visible targets for every clue fails. For compatibility,
+the runner also accepts `_clue_candidates(clue)` returning `(set[str], route)`.
+
 ## What an experiment PR may change
 
 An experiment PR normally changes only:
@@ -122,8 +140,34 @@ the result table.
 
 | Candidate type | Primary checks | Safety checks |
 |---|---|---|
-| NLP | exact-wrapper state accuracy, unseen-wrapper accuracy, catalog grounding | false negation/override, raw-value preservation, latency |
-| Algorithm | public and generated Technical Score, HR, MRR, MTTC | worst scenario, target survival, false elimination, latency |
+| NLP | independent 100-case category, fact-state, polarity, and grounding metrics | per-scenario failures, raw-value preservation, latency |
+| Algorithm | generated-dev 2,000 Technical Score, HR, MRR, MTTC | worst scenario, target survival, false elimination, latency |
+
+Use only these candidate-comparison commands:
+
+```bash
+# NLP: baseline, then isolated candidate
+make human-stress
+make human-stress ENTRYPOINT=experiments/nlp/<owner>-<approach>/entrypoint.py
+
+# Algorithm: baseline, then isolated candidate
+make evaluate-unseen-dev
+make evaluate-candidate-dev ENTRYPOINT=experiments/algo/<owner>-<approach>/entrypoint.py
+```
+
+The 100 NLP cases are independent, model-generated human-style diagnostics, not
+organizer data or proof of private wording. They are committed so comparisons
+are reproducible; do not special-case messages or case IDs. Generated-dev is
+also a visible shared development set, so an improvement still needs focused
+tests and scenario-level failure analysis.
+
+### Organizer-public firewall
+
+Experiment owners must not run `make evaluate`, inspect public per-session
+failures, or use the organizer 200 for hyperparameters, ablations, candidate
+selection, or winner selection. Existing public scores are historical references
+only. The integration owner runs them after both winners and their settings are
+frozen.
 
 For NLP, report wrapper-only paraphrases separately from value-level semantic
 paraphrases. A parser that extracts `not wet in rain` correctly has not
@@ -136,15 +180,19 @@ metrics and any target-survival regression.
 ## Selecting and integrating winners
 
 1. Merge valid experiment folders so everyone can reproduce them.
-2. Freeze the comparison commit and run all candidates with the same commands.
+2. Freeze the comparison commit and run NLP on the independent 100 and algorithms
+   on generated-dev with the same commands.
 3. Select one NLP candidate and one algorithm candidate using the table above.
 4. The integration owner creates a new branch from `main` and adapts only the
    selected candidates into `starter/`.
 5. Benchmark the combined system again. Two individually strong components can
    interact badly, especially around confidence, hard filters, and overrides.
-6. Merge the integration PR only after contract tests and required benchmarks
-   pass. Keep losing candidates under `experiments/` until submission decisions
-   are final, then archive them if desired.
+6. Freeze the combined code and settings, then have the integration owner run
+   `make integration-check` once on the organizer public 200. Use it to catch an
+   Agent-contract/protocol regression, not to reopen public-driven tuning.
+7. Merge the integration PR only after required checks pass. Keep losing
+   candidates under `experiments/` until submission decisions are final, then
+   archive them if desired.
 
 Do not ask every teammate to resolve conflicts in `starter/agent.py`; that is the
 integration owner's job after winner selection.
