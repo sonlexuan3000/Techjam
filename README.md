@@ -35,6 +35,9 @@ before using the second split.
 
 Team ownership, module boundaries, and PR rules are in
 [docs/TEAM_ROLES.md](docs/TEAM_ROLES.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+Competing NLP and algorithm variants belong under `experiments/`; use
+[docs/EXPERIMENT_WORKFLOW.md](docs/EXPERIMENT_WORKFLOW.md) so every candidate can
+be compared without replacing the official Agent.
 
 ## Current Working Baseline
 
@@ -175,6 +178,8 @@ docs/evaluation_config.json       scoring configuration
 docs/baseline_results.json        reproducible weak-starter reference score
 docs/TEAM_BASELINE.md             verified team metrics and caveats
 docs/TEAM_ROLES.md                five-person ownership and module contracts
+docs/EXPERIMENT_WORKFLOW.md       isolated candidate and PR/MR rules
+experiments/                      competing NLP and algorithm implementations
 scripts/build_unseen_official_sessions.py deterministic shared test generator
 scripts/run_paraphrase_stress_eval.py      input-language robustness test
 starter/agent.py                  official interface and current team baseline
