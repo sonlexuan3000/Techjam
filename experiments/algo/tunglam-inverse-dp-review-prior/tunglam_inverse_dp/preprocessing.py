@@ -38,7 +38,15 @@ def _clean_payload(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip(" -;,.\t\r\n")
 
 
-def _is_core_protocol_message(message: str, turn: int) -> bool:
+def is_core_protocol_message(message: str, turn: int) -> bool:
+    """Return whether ``message`` uses an organizer-released exact wrapper.
+
+    Only these messages are safe to replay as exact inverse-simulator evidence.
+    A parsed paraphrase can still be useful for ranking, but canonicalizing it
+    must not silently upgrade an uncertain NLP interpretation into a hard
+    protocol fact.
+    """
+
     normalized = re.sub(r"\s+", " ", message).strip().lower()
     if turn == 1 and normalized.startswith("i'm looking for "):
         return True
@@ -75,7 +83,7 @@ class InputPreprocessor:
     ) -> str:
         state = self.sessions.setdefault(session_id, _InputState())
         raw_message = str(user_message or "")
-        if _is_core_protocol_message(raw_message, turn):
+        if is_core_protocol_message(raw_message, turn):
             return raw_message
         parsed = parse_message(raw_message, turn=turn)
 

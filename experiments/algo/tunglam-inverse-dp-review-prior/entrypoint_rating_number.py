@@ -1,4 +1,4 @@
-"""Primary, data-safe entrypoint for the inverse-card + DP candidate."""
+"""Catalog-only rating-count ablation for the inverse-DP candidate."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from tunglam_inverse_dp.agent import Agent
 
 
 def build_agent(catalog_path: str | Path) -> Agent:
-    """Build the candidate without modifying the shared starter agent."""
+    """Build the same candidate using only the supplied catalog popularity."""
 
     return Agent(
         catalog_path,
-        prior_field="uniform",
+        prior_field="rating_number",
         prior_smoothing=0.0,
     )

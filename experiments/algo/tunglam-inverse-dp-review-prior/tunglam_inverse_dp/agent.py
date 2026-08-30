@@ -7,7 +7,19 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .preprocessing import InputPreprocessor, canonicalize_punctuation
+from starter.agent import (
+    Agent as IntentTracker,
+    SPECIAL_WORDS as TRACKER_SPECIAL_WORDS,
+    WORD_RE as TRACKER_WORD_RE,
+    normalize as tracker_normalize,
+)
+from starter.parser import ParsedMessage, parse_message
+
+from .preprocessing import (
+    InputPreprocessor,
+    canonicalize_punctuation,
+    is_core_protocol_message,
+)
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
@@ -158,11 +170,17 @@ class ProductIntent:
 class SessionState:
     user_profile: dict
     messages: list[str] = field(default_factory=list)
+    raw_messages: list[str] = field(default_factory=list)
     initial_candidates: list[str] = field(default_factory=list)
     current_candidates: list[str] = field(default_factory=list)
+    trusted_universe: tuple[str, ...] = ()
+    focus_candidates: list[str] = field(default_factory=list)
     scenario: str | None = None
     override_applied: bool = True
+    override_seen: bool = False
+    nlp_fallback: bool = False
     rejected: set[str] = field(default_factory=set)
+    pre_override_recommendations: set[str] = field(default_factory=set)
     last_recommendations: tuple[str, ...] = ()
     last_recommendations_scored: bool = False
 
@@ -178,43 +196,45 @@ class Agent:
     def __init__(
         self,
         catalog_path: str | Path = "data/catalog.jsonl",
-        prior_field: str = "verified_reviews_365d",
-        review_features_path: str | Path = "data/review_prior.tsv",
-        prior_smoothing: float = 1.0,
+        prior_field: str = "uniform",
+        prior_smoothing: float = 0.0,
     ) -> None:
         self.catalog_path = Path(catalog_path)
+        if prior_field not in {"uniform", "rating_number"}:
+            raise ValueError(
+                "prior_field must be 'uniform' or the catalog field "
+                "'rating_number'"
+            )
         self.prior_field = prior_field
         self.prior_smoothing = float(prior_smoothing)
-        self.review_features: dict[str, dict] = {}
-        if prior_field not in {"rating_number", "uniform"}:
-            review_path = Path(review_features_path)
-            with review_path.open(encoding="utf-8") as handle:
-                if review_path.suffix == ".tsv":
-                    header = handle.readline().rstrip("\n").split("\t")
-                    if header != ["parent_asin", prior_field]:
-                        raise ValueError(
-                            f"unexpected review-prior header: {header}"
-                        )
-                    self.review_features = {
-                        parent_asin: {prior_field: int(value)}
-                        for line in handle
-                        if line.strip()
-                        for parent_asin, value in [line.rstrip("\n").split("\t")]
-                    }
-                else:
-                    self.review_features = {
-                        str(record["parent_asin"]): record
-                        for line in handle
-                        if line.strip()
-                        for record in [json.loads(line)]
-                    }
         self.products: dict[str, ProductIntent] = {}
         self.initial_message_index: dict[str, list[str]] = defaultdict(list)
         self.category_index: dict[str, list[str]] = defaultdict(list)
         self.sessions: dict[str, SessionState] = {}
         self.input_preprocessor = InputPreprocessor()
         self._dp_cache: dict[tuple, tuple[float, int]] = {}
+        self.intent_tracker = self._empty_intent_tracker()
         self._build_index()
+        self.all_product_ids = tuple(sorted(self.products, key=self._rank_key))
+
+    def _empty_intent_tracker(self) -> IntentTracker:
+        """Create the shared NLP tracker without rescanning/indexing the catalog.
+
+        The simulator can reveal only the four reconstructed card constraints,
+        so the candidate populates the tracker's lookup tables from those cards
+        during its existing catalog pass. This keeps the NLP layer lightweight
+        instead of building a second full-metadata index.
+        """
+
+        tracker = IntentTracker.__new__(IntentTracker)
+        tracker.catalog_path = self.catalog_path
+        tracker.asins = []
+        tracker.rating_numbers = {}
+        tracker.atom_to_asins = defaultdict(set)
+        tracker.coarse_category_to_asins = defaultdict(set)
+        tracker.special_word_to_asins = defaultdict(set)
+        tracker.sessions = {}
+        return tracker
 
     def _build_index(self) -> None:
         with self.catalog_path.open(encoding="utf-8") as handle:
@@ -224,17 +244,11 @@ class Agent:
                 category = _coarse_category(product.get("categories") or [])
                 hard, soft = _intent_card(product)
                 rating_number = int(product.get("rating_number") or 0)
-                if self.prior_field == "uniform":
-                    prior_value = 1.0
-                elif self.prior_field == "rating_number":
-                    prior_value = float(rating_number)
-                else:
-                    prior_value = float(
-                        self.review_features.get(parent_asin, {}).get(
-                            self.prior_field, 0
-                        )
-                        or 0
-                    )
+                prior_value = (
+                    1.0
+                    if self.prior_field == "uniform"
+                    else float(rating_number)
+                )
                 intent = ProductIntent(
                     parent_asin=parent_asin,
                     category=category,
@@ -251,6 +265,29 @@ class Agent:
                 )
                 self.products[parent_asin] = intent
                 self.category_index[_normalize_message(category)].append(parent_asin)
+                self.intent_tracker.asins.append(parent_asin)
+                self.intent_tracker.rating_numbers[parent_asin] = float(
+                    rating_number
+                )
+                tracker_category = tracker_normalize(category)
+                if tracker_category:
+                    self.intent_tracker.coarse_category_to_asins[
+                        tracker_category
+                    ].add(parent_asin)
+                for constraint in intent.constraints:
+                    constraint_key = tracker_normalize(constraint)
+                    if constraint_key:
+                        self.intent_tracker.atom_to_asins[constraint_key].add(
+                            parent_asin
+                        )
+                special_words = (
+                    set(TRACKER_WORD_RE.findall(intent.text.lower()))
+                    & TRACKER_SPECIAL_WORDS
+                )
+                for word in special_words:
+                    self.intent_tracker.special_word_to_asins[word].add(
+                        parent_asin
+                    )
 
                 initial_messages = [
                     f"I'm looking for {category}, but I'm still exploring.",
@@ -268,6 +305,15 @@ class Agent:
             identifiers.sort(key=self._rank_key)
         for identifiers in self.initial_message_index.values():
             identifiers.sort(key=self._rank_key)
+        self.intent_tracker.atom_to_asins = dict(
+            self.intent_tracker.atom_to_asins
+        )
+        self.intent_tracker.coarse_category_to_asins = dict(
+            self.intent_tracker.coarse_category_to_asins
+        )
+        self.intent_tracker.special_word_to_asins = dict(
+            self.intent_tracker.special_word_to_asins
+        )
 
     def _rank_key(self, parent_asin: str) -> tuple[float, float, float, str]:
         if self.prior_field == "uniform":
@@ -285,6 +331,137 @@ class Agent:
     def reset(self, session_id: str, user_profile: dict) -> None:
         self.sessions[session_id] = SessionState(user_profile=dict(user_profile))
         self.input_preprocessor.reset(session_id)
+        self.intent_tracker.reset(session_id, user_profile)
+
+    def debug_state(self, session_id: str) -> dict:
+        """Expose the shared NLP state to the repository's stress benchmark."""
+
+        return self.intent_tracker.debug_state(session_id)
+
+    def debug_clue_candidates(
+        self,
+        clue: str,
+        *,
+        category: str | None = None,
+    ) -> set[str]:
+        """Return catalog-grounded matches for one parsed clue.
+
+        ``category`` is accepted for the benchmark adapter; grounding itself is
+        deliberately independent of a possibly paraphrased category label.
+        """
+
+        del category
+        matches, _route = self.intent_tracker._clue_candidates(clue)
+        return matches
+
+    @staticmethod
+    def _scenario_from_parsed(parsed: ParsedMessage) -> str:
+        if parsed.source == "initial_requirement":
+            return "buying"
+        if parsed.source in {
+            "initial_preference",
+            "compact_initial_preference",
+        }:
+            return "intent_override"
+        return "exploring"
+
+    def _observe_nlp(
+        self,
+        session_id: str,
+        raw_message: str,
+        turn: int,
+    ) -> ParsedMessage:
+        """Update the shared intent tracker without running its recommender."""
+
+        tracker_state = self.intent_tracker.sessions[session_id]
+        parsed = parse_message(raw_message, turn=turn)
+        self.intent_tracker._parse(tracker_state, raw_message, turn)
+        return parsed
+
+    def _protocol_evidence_is_grounded(self, parsed: ParsedMessage) -> bool:
+        """Check that an exact wrapper still carries catalog-grounded values."""
+
+        if parsed.action not in {"add", "override"} or not parsed.payload:
+            return True
+        if parsed.source == "revealed":
+            parts = self.intent_tracker._split_revealed_payload(parsed.payload)
+        else:
+            parts = [parsed.payload]
+        return bool(parts) and all(
+            bool(self.intent_tracker._clue_candidates(part)[0])
+            for part in parts
+        )
+
+    def _degraded_candidate_tiers(
+        self,
+        session_id: str,
+        state: SessionState,
+        *,
+        reopen_focus: bool = False,
+    ) -> tuple[list[str], list[str]]:
+        """Return exact-card focus and a non-destructive recovery tier.
+
+        NLP-derived constraints act like a hard filter in the focus tier used
+        for recommendations. They never define eligibility, though: a wrong
+        parse leaves every trusted candidate in the recovery tier, so the
+        target can return after false positives are rejected.
+        """
+
+        tracker_state = self.intent_tracker.sessions[session_id]
+        universe = state.trusted_universe or self.all_product_ids
+        focus_base_is_eligible = False
+        if len(state.messages) == 1:
+            indexed = self.initial_message_index.get(
+                _normalize_message(state.messages[0]),
+                [],
+            )
+            focus_base = indexed or universe
+            focus_base_is_eligible = universe is self.all_product_ids
+        elif state.focus_candidates and not reopen_focus:
+            focus_base = state.focus_candidates
+            focus_base_is_eligible = True
+        else:
+            category = self._category_from_message(state.messages[0])
+            category_base = self.category_index.get(category or "", [])
+            focus_base = category_base or universe
+            focus_base_is_eligible = not category_base
+
+        universe_set = (
+            None
+            if focus_base_is_eligible or universe is self.all_product_ids
+            else set(universe)
+        )
+
+        focus = sorted(
+            (
+                parent_asin
+                for parent_asin in focus_base
+                if parent_asin not in state.rejected
+                if universe_set is None or parent_asin in universe_set
+                if self._matches_conversation(
+                    self.products[parent_asin],
+                    state.messages,
+                )
+            ),
+            key=self._rank_key,
+        )
+        if focus:
+            # Recovery membership remains in ``trusted_universe``. It is
+            # materialized only if the focus tier becomes empty.
+            recovery: list[str] = []
+        else:
+            eligible_set = {
+                parent_asin
+                for parent_asin in universe
+                if parent_asin not in state.rejected
+            }
+            tracker_rank = self.intent_tracker._rank(tracker_state)
+            recovery = [
+                parent_asin
+                for parent_asin in tracker_rank
+                if parent_asin in eligible_set
+            ]
+        return focus, recovery
 
     def _initial_scenario(
         self, product: ProductIntent, message: str
@@ -681,62 +858,131 @@ class Agent:
         state = self.sessions.get(session_id)
         if state is None:
             raise RuntimeError("reset must be called before respond")
+        raw_message = str(user_message or "")
+        parsed = self._observe_nlp(session_id, raw_message, turn)
+        trusted_protocol = (
+            is_core_protocol_message(raw_message, turn)
+            and self._protocol_evidence_is_grounded(parsed)
+        )
         user_message = self.input_preprocessor.canonicalize(
             session_id,
-            user_message,
+            raw_message,
             turn,
         )
 
-        # Reaching another turn proves that every recommendation which was
-        # scoreable on the previous turn was a miss.
-        if state.last_recommendations_scored:
+        override_now = parsed.action == "override" or _normalize_message(
+            user_message
+        ).startswith(
+            "actually, ignore my earlier preference. what i need is: "
+        )
+        if override_now and not state.override_seen:
+            # Intent-override recommendations are not scoreable before the
+            # override. If the initial paraphrase hid that scenario, repair the
+            # provisional rejection history now that the event is explicit.
+            state.rejected.difference_update(
+                state.pre_override_recommendations
+            )
+            state.override_seen = True
+            state.override_applied = True
+        elif state.last_recommendations_scored:
+            # Reaching another turn proves that every scoreable recommendation
+            # on the previous turn was a miss.
             state.rejected.update(state.last_recommendations)
+        state.raw_messages.append(raw_message)
         state.messages.append(user_message)
+        state.nlp_fallback = state.nlp_fallback or not trusted_protocol
 
         if len(state.messages) == 1:
-            candidates = list(
-                self.initial_message_index.get(_normalize_message(user_message), [])
-            )
-            if not candidates:
-                category = self._category_from_message(user_message)
-                candidates = list(self.category_index.get(category or "", []))
-            state.initial_candidates = candidates
-            state.current_candidates = candidates
-            if candidates:
-                initial = self._initial_scenario(
-                    self.products[candidates[0]], user_message
-                )
-                state.scenario = initial[0] if initial is not None else None
-            state.override_applied = state.scenario != "intent_override"
-        else:
-            if _normalize_message(user_message).startswith(
-                "actually, ignore my earlier preference. what i need is: "
-            ):
-                state.override_applied = True
-            compatible = [
-                parent_asin
-                for parent_asin in state.initial_candidates
-                if parent_asin not in state.rejected
-                and self._matches_conversation(
-                    self.products[parent_asin], state.messages
-                )
-            ]
-            if compatible:
-                state.current_candidates = sorted(compatible, key=self._rank_key)
+            if state.nlp_fallback:
+                state.scenario = self._scenario_from_parsed(parsed)
+                state.override_applied = state.scenario != "intent_override"
+                state.trusted_universe = self.all_product_ids
             else:
-                # Relax only soft preferences. Products that violate an
-                # observed hard constraint, or were already rejected, stay out.
-                state.current_candidates = self._hard_fallback_candidates(state)
+                candidates = list(
+                    self.initial_message_index.get(
+                        _normalize_message(user_message), []
+                    )
+                )
+                if not candidates:
+                    # A wrapper that looks official but cannot reproduce any
+                    # product card is not exact protocol evidence after all.
+                    state.nlp_fallback = True
+                    state.scenario = self._scenario_from_parsed(parsed)
+                    state.override_applied = state.scenario != "intent_override"
+                    state.trusted_universe = self.all_product_ids
+                else:
+                    state.initial_candidates = candidates
+                    state.current_candidates = candidates
+                    state.trusted_universe = tuple(candidates)
+                    initial = self._initial_scenario(
+                        self.products[candidates[0]], user_message
+                    )
+                    state.scenario = initial[0] if initial is not None else None
+                    state.override_applied = state.scenario != "intent_override"
+        else:
+            if override_now:
+                state.override_applied = True
+            if not state.nlp_fallback:
+                compatible = [
+                    parent_asin
+                    for parent_asin in state.initial_candidates
+                    if parent_asin not in state.rejected
+                    and self._matches_conversation(
+                        self.products[parent_asin], state.messages
+                    )
+                ]
+                if compatible:
+                    state.current_candidates = sorted(
+                        compatible,
+                        key=self._rank_key,
+                    )
+                else:
+                    # Relax only soft preferences. Products that violate an
+                    # observed hard constraint, or were already rejected, stay out.
+                    state.current_candidates = self._hard_fallback_candidates(state)
+                state.trusted_universe = tuple(state.current_candidates)
 
-        ranked = state.current_candidates
+        recovery: list[str] = []
+        if state.nlp_fallback:
+            focus, recovery = self._degraded_candidate_tiers(
+                session_id,
+                state,
+                reopen_focus=override_now,
+            )
+            state.focus_candidates = focus
+            # The shared trusted universe is the recovery membership. Persist
+            # only the small active focus to avoid retaining 50,000 references
+            # for every completed evaluator session.
+            state.current_candidates = focus
+        else:
+            state.focus_candidates = list(state.current_candidates)
+
+        ranked = (
+            state.focus_candidates
+            or recovery
+            or state.current_candidates
+        )
         if not ranked and len(state.messages) == 1:
             ranked = self._lexical_fallback(state)
 
-        recommendation_limit = self._recommendation_limit(
-            state, ranked, turn, top_k
-        )
+        if state.nlp_fallback and not state.focus_candidates:
+            requested = max(0, min(int(top_k), 10))
+            recommendation_limit = min(
+                requested,
+                {1: 1, 2: 2}.get(int(turn), 10),
+                len(ranked),
+            )
+        else:
+            recommendation_limit = self._recommendation_limit(
+                state,
+                ranked,
+                turn,
+                top_k,
+            )
         recommendations = tuple(ranked[:recommendation_limit])
         state.last_recommendations = recommendations
+        if not state.override_seen:
+            state.pre_override_recommendations.update(recommendations)
         state.last_recommendations_scored = (
             state.scenario != "intent_override" or state.override_applied
         )

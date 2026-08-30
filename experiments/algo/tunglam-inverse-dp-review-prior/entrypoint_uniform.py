@@ -1,14 +1,14 @@
-"""Uniform-prior ablation for the inverse-DP candidate."""
+"""Compatibility alias for the primary uniform inverse-DP candidate."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from src.agent import Agent
+from tunglam_inverse_dp.agent import Agent
 
 
 def build_agent(catalog_path: str | Path) -> Agent:
-    """Build the same candidate with equal probability for every product."""
+    """Build the data-safe primary candidate with equal product priors."""
 
     return Agent(
         catalog_path,

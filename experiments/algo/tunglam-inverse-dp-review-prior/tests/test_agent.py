@@ -10,7 +10,11 @@ CANDIDATE_ROOT = Path(__file__).resolve().parents[1]
 if str(CANDIDATE_ROOT) not in sys.path:
     sys.path.insert(0, str(CANDIDATE_ROOT))
 
-from src.agent import Agent
+from evaluator.local_evaluator import (
+    coarse_category as evaluator_coarse_category,
+    intent_card as evaluator_intent_card,
+)
+from tunglam_inverse_dp.agent import Agent, _coarse_category, _intent_card
 
 
 class InverseSimulatorAgentTest(unittest.TestCase):
@@ -53,6 +57,23 @@ class InverseSimulatorAgentTest(unittest.TestCase):
                 "rating_number": 1000,
                 "store": "Distractor Store",
             },
+            {
+                "parent_asin": "SECOND_DISTRACTOR",
+                "title": "Second distractor shoe",
+                "features": [
+                    "wrong feature one",
+                    "wrong feature two",
+                    "wrong feature three",
+                    "wrong feature four",
+                ],
+                "description": [],
+                "price": None,
+                "categories": ["Clothing", "Shoes"],
+                "details": {},
+                "average_rating": 4.7,
+                "rating_number": 500,
+                "store": "Second Store",
+            },
         ]
         catalog_path.write_text(
             "".join(json.dumps(product) + "\n" for product in products),
@@ -83,6 +104,31 @@ class InverseSimulatorAgentTest(unittest.TestCase):
         )
         self.assertEqual(second["recommendations"], [{"parent_asin": "TARGET"}])
 
+    def test_evaluator_card_and_category_parity(self) -> None:
+        product = {
+            "parent_asin": "PARITY",
+            "title": "Blue cotton walking shoe",
+            "features": ["Water resistant", "Machine Wash"],
+            "details": {"Closure": "Lace-Up"},
+            "description": ["Everyday outdoor shoe"],
+            "categories": ["Clothing", "Shoes", "Walking"],
+            "store": "Parity Store",
+            "price": 49.99,
+        }
+        card = evaluator_intent_card(product)
+
+        self.assertEqual(
+            _intent_card(product),
+            (
+                tuple(card["hard_constraints"]),
+                tuple(card["soft_preferences"]),
+            ),
+        )
+        self.assertEqual(
+            _coarse_category(product["categories"]),
+            evaluator_coarse_category(product["categories"]),
+        )
+
     def test_intent_override_is_replayed_against_product_card(self) -> None:
         self.agent.reset("override", {})
         self.agent.respond(
@@ -109,20 +155,9 @@ class InverseSimulatorAgentTest(unittest.TestCase):
         self.assertEqual(weights, [1000.0, 10.0])
         self.assertEqual(total, 1010.0)
 
-    def test_review_prior_is_loaded_with_smoothing(self) -> None:
-        prior_path = Path(self.temporary_directory.name) / "review_prior.tsv"
-        prior_path.write_text(
-            "parent_asin\tverified_reviews_365d\n"
-            "TARGET\t7\n"
-            "POPULAR_DISTRACTOR\t2\n",
-            encoding="utf-8",
-        )
-        agent = Agent(self.catalog_path, review_features_path=prior_path)
-
-        self.assertEqual(agent.products["TARGET"].prior_weight, 8.0)
-        self.assertEqual(
-            agent.products["POPULAR_DISTRACTOR"].prior_weight, 3.0
-        )
+    def test_external_prior_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "uniform.*rating_number"):
+            Agent(self.catalog_path, prior_field="verified_reviews_365d")
 
     def test_uniform_prior_removes_all_catalog_popularity_bias(self) -> None:
         agent = Agent(
@@ -138,7 +173,7 @@ class InverseSimulatorAgentTest(unittest.TestCase):
         self.assertEqual(total, 2.0)
         self.assertEqual(
             sorted(agent.products, key=agent._rank_key),
-            ["POPULAR_DISTRACTOR", "TARGET"],
+            ["POPULAR_DISTRACTOR", "SECOND_DISTRACTOR", "TARGET"],
         )
 
     def test_dp_can_choose_an_intermediate_cutoff(self) -> None:
@@ -221,7 +256,12 @@ class InverseSimulatorAgentTest(unittest.TestCase):
             1,
         )
 
-        surviving = agent.sessions["fallback"].current_candidates
+        state = agent.sessions["fallback"]
+        surviving = [
+            parent_asin
+            for parent_asin in state.trusted_universe
+            if parent_asin not in state.rejected
+        ]
         self.assertTrue(surviving)
         self.assertTrue(
             all(
@@ -230,27 +270,127 @@ class InverseSimulatorAgentTest(unittest.TestCase):
                 for parent_asin in surviving
             )
         )
+        self.assertTrue(state.nlp_fallback)
         self.assertEqual(len(response["recommendations"]), 1)
 
-    def test_soft_fallback_never_restores_a_hard_mismatch(self) -> None:
-        self.agent.reset("hard-mismatch", {})
+    def test_explicit_grounded_hard_requirement_is_hard_filtered(self) -> None:
+        self.agent.reset("grounded-hard", {})
+        response = self.agent.respond(
+            "grounded-hard",
+            "I need Shoes. My main requirement is: alpha feature.",
+            1,
+            10,
+        )
+
+        self.assertEqual(
+            self.agent.sessions["grounded-hard"].focus_candidates,
+            ["TARGET"],
+        )
+        self.assertIn(
+            "POPULAR_DISTRACTOR",
+            self.agent.sessions["grounded-hard"].trusted_universe,
+        )
+        self.assertEqual(response["recommendations"], [{"parent_asin": "TARGET"}])
+
+    def test_ungrounded_paraphrase_cannot_delete_the_target(self) -> None:
+        self.agent.reset("uncertain", {})
         self.agent.respond(
-            "hard-mismatch",
+            "uncertain",
+            "I'm looking for Shoes, but I'm still exploring.",
+            1,
+            1,
+        )
+        self.agent.respond(
+            "uncertain",
+            "What matters to me is: stays dry through a storm.",
+            2,
+            2,
+        )
+
+        state = self.agent.sessions["uncertain"]
+        self.assertTrue(state.nlp_fallback)
+        self.assertIn("TARGET", state.trusted_universe)
+        self.assertNotIn("TARGET", state.rejected)
+
+    def test_wrong_grounded_paraphrase_is_focus_only(self) -> None:
+        self.agent.reset("wrong-focus", {})
+        self.agent.respond(
+            "wrong-focus",
             "I'm looking for Shoes, but I'm still exploring.",
             1,
             1,
         )
         response = self.agent.respond(
-            "hard-mismatch",
-            "For that, what matters is: nonexistent hard; impossible hard.",
+            "wrong-focus",
+            "My priorities are: wrong feature one; wrong feature two.",
+            2,
+            2,
+        )
+
+        state = self.agent.sessions["wrong-focus"]
+        self.assertEqual(state.focus_candidates, ["SECOND_DISTRACTOR"])
+        self.assertIn("TARGET", state.trusted_universe)
+        self.assertNotIn("TARGET", state.rejected)
+        self.assertEqual(
+            response["recommendations"],
+            [{"parent_asin": "SECOND_DISTRACTOR"}],
+        )
+
+    def test_protocol_trust_does_not_restart_after_a_paraphrase(self) -> None:
+        self.agent.reset("broken-chain", {})
+        self.agent.respond(
+            "broken-chain",
+            "I'm looking for Shoes, but I'm still exploring.",
+            1,
+            1,
+        )
+        self.agent.respond(
+            "broken-chain",
+            "My priorities are: wrong feature one; wrong feature two.",
             2,
             1,
         )
-
-        self.assertEqual(
-            self.agent.sessions["hard-mismatch"].current_candidates, []
+        self.agent.respond(
+            "broken-chain",
+            "For that, what matters is: alpha feature; beta feature.",
+            3,
+            10,
         )
-        self.assertEqual(response["recommendations"], [])
+
+        state = self.agent.sessions["broken-chain"]
+        self.assertTrue(state.nlp_fallback)
+        self.assertIn("TARGET", state.trusted_universe)
+        self.assertNotIn("TARGET", state.rejected)
+
+    def test_late_override_repairs_pre_override_rejections_only_once(self) -> None:
+        self.agent.reset("late-override", {})
+        first = self.agent.respond(
+            "late-override",
+            "Show me Shoes with delta feature.",
+            1,
+            1,
+        )
+        first_asin = first["recommendations"][0]["parent_asin"]
+        self.agent.respond("late-override", "Give me a moment.", 2, 1)
+        self.assertIn(first_asin, self.agent.sessions["late-override"].rejected)
+
+        self.agent.respond(
+            "late-override",
+            "Actually, my new requirement is: alpha feature.",
+            3,
+            1,
+        )
+        state = self.agent.sessions["late-override"]
+        self.assertNotIn(first_asin, state.rejected)
+
+        scored = state.last_recommendations[0]
+        self.agent.respond(
+            "late-override",
+            "Actually, my new requirement is: beta feature.",
+            4,
+            1,
+        )
+        self.assertIn(scored, state.rejected)
 
     def test_fallback_dp_mask_keeps_constraints_already_asked(self) -> None:
         product = self.agent.products["TARGET"]
