@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from starter.agent import Agent
+from starter.intent_tracker import Agent
 
 
 RAW_FEATURE = "High quality mesh for maximum breathability to keep you cool"

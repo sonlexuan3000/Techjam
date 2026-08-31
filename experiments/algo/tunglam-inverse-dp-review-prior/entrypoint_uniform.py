@@ -1,4 +1,4 @@
-"""Compatibility alias for the primary uniform inverse-DP candidate."""
+"""Compatibility alias for the selected uniform inverse-DP backend."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from tunglam_inverse_dp.agent import Agent
 
 
 def build_agent(catalog_path: str | Path) -> Agent:
-    """Build the data-safe primary candidate with equal product priors."""
+    """Build the integrated winner with equal inverse-DP belief priors."""
 
     return Agent(
         catalog_path,

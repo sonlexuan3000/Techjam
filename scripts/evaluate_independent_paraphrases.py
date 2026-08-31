@@ -29,7 +29,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from starter.agent import Agent, normalize  # noqa: E402
+from starter.agent import Agent  # noqa: E402
+from starter.intent_tracker import Agent as GroundingOracle, normalize  # noqa: E402
 
 
 EXPECTED_KINDS = {"wrapper_exact_value", "semantic_value_paraphrase"}
@@ -277,7 +278,7 @@ def clue_candidates(candidate: Any, clue: str, category: str | None) -> set[str]
     return {str(value) for value in values}
 
 
-def grounding_reference_products(oracle: Agent, atom: str) -> set[str]:
+def grounding_reference_products(oracle: GroundingOracle, atom: str) -> set[str]:
     """Mirror the catalog route appropriate for the target metadata atom.
 
     Whole multi-token atoms use exact metadata matches. Short material/color
@@ -299,7 +300,7 @@ def grounding_reference_products(oracle: Agent, atom: str) -> set[str]:
 
 def validate_fixture(
     cases: list[dict[str, Any]],
-    oracle: Agent,
+    oracle: GroundingOracle,
     excluded_targets: set[str],
 ) -> dict[str, Any]:
     if len(cases) != 100:
@@ -481,7 +482,11 @@ def _state_texts(state: dict[str, Any], field: str) -> list[str]:
     return [str(item["text"]) for item in state[field]]
 
 
-def evaluate_case(candidate: Any, oracle: Agent, case: dict[str, Any]) -> dict[str, Any]:
+def evaluate_case(
+    candidate: Any,
+    oracle: GroundingOracle,
+    case: dict[str, Any],
+) -> dict[str, Any]:
     case_id = str(case["id"])
     candidate.reset(case_id, {})
     for message in case["messages"]:
@@ -787,11 +792,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    oracle = Agent(args.catalog)
+    oracle = GroundingOracle(args.catalog)
     if args.entrypoint:
         candidate, candidate_name = load_candidate(args.catalog, args.entrypoint)
     else:
-        candidate, candidate_name = oracle, "starter.agent:Agent"
+        candidate, candidate_name = Agent(args.catalog), "starter.agent:Agent"
     cases = load_jsonl(args.fixture)
     excluded_targets = load_excluded_targets(args.public_dataset)
     fixture_summary = validate_fixture(cases, oracle, excluded_targets)

@@ -1,6 +1,6 @@
-"""Compatibility import for the integrated inverse-DP implementation."""
+"""Compatibility exports for the selected inverse-DP core."""
 
-from starter.inverse_dp.agent import (
+from submission.src.shopping_copilot.core import (
     Agent,
     ProductIntent,
     SessionState,

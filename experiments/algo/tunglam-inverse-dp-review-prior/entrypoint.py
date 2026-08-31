@@ -1,4 +1,4 @@
-"""Primary, data-safe entrypoint for the inverse-card + DP candidate."""
+"""Compatibility entrypoint for the selected uniform inverse-DP backend."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from tunglam_inverse_dp.agent import Agent
 
 
 def build_agent(catalog_path: str | Path) -> Agent:
-    """Build the candidate without modifying the shared starter agent."""
+    """Build the integrated winner with its selected uniform configuration."""
 
     return Agent(
         catalog_path,
