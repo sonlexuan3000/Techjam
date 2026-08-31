@@ -49,6 +49,8 @@ show only the primary dataset, or raise it to preview more than the default 20.
   finite-horizon DP states, selected Top-K, retrieval route, prior, and runtime.
   It switches to “Calculation complete” and remains in the transcript for that
   turn.
+- Playback shows a left-aligned customer typing indicator before each message,
+  followed by short reading and reply pauses scaled to the selected speed.
 - The browser can auto-play, pause, step through, replay, filter sessions, pick
   a random session, and copy the completed transcript.
 

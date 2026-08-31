@@ -1151,6 +1151,44 @@ button:disabled {
   border-radius: 16px 6px 16px 16px;
 }
 
+.customer-typing-row {
+  margin-bottom: 22px;
+}
+
+.customer-typing-bubble {
+  display: grid;
+  min-width: 64px;
+  min-height: 42px;
+  place-items: center;
+  padding: 10px 16px;
+  background: var(--rail);
+  border: 1px solid var(--rail);
+  border-radius: 6px 16px 16px 16px;
+  box-shadow: 0 7px 18px rgba(23, 37, 34, 0.1);
+}
+
+.customer-typing-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.customer-typing-dots i {
+  width: 6px;
+  height: 6px;
+  background: rgba(245, 250, 247, 0.72);
+  border-radius: 50%;
+  animation: typing 1s infinite ease-in-out;
+}
+
+.customer-typing-dots i:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.customer-typing-dots i:nth-child(3) {
+  animation-delay: 280ms;
+}
+
 .assistant-details {
   margin-top: 9px;
 }

@@ -382,6 +382,24 @@ function userMessage(turn) {
   return row;
 }
 
+function userTypingMessage(turn) {
+  const row = createElement("article", "message-row user customer-typing-row");
+  row.dataset.typing = "true";
+  row.append(createElement("div", "message-avatar", initialsForProfile(state.selected)));
+  const stack = createElement("div", "message-stack");
+  stack.append(createElement("div", "message-meta", `Customer · Typing turn ${turn.turn}`));
+  const bubble = createElement("div", "customer-typing-bubble");
+  bubble.setAttribute("role", "status");
+  bubble.setAttribute("aria-label", `The customer is typing turn ${turn.turn}`);
+  const dots = createElement("span", "customer-typing-dots");
+  dots.setAttribute("aria-hidden", "true");
+  dots.append(createElement("i"), createElement("i"), createElement("i"));
+  bubble.append(dots);
+  stack.append(bubble);
+  row.append(stack);
+  return row;
+}
+
 function compactStatNumber(value) {
   if (value === null || value === undefined || value === "") return "—";
   const number = Number(value);
@@ -724,6 +742,21 @@ function playbackDelay() {
   return reducedMotion ? 20 : Number(dom.speed.value || 900);
 }
 
+function customerTypingDelay(message) {
+  if (reducedMotion) return 280;
+  const speedScale = Math.max(0.4, Math.min(1.7, playbackDelay() / 900));
+  const naturalDelay = Math.max(650, Math.min(1250, 480 + String(message).length * 9));
+  return Math.max(320, Math.min(1900, Math.round(naturalDelay * speedScale)));
+}
+
+function readingPause() {
+  return reducedMotion ? 100 : Math.max(120, Math.min(420, Math.round(playbackDelay() * 0.25)));
+}
+
+function replyPause() {
+  return reducedMotion ? 100 : Math.max(100, Math.min(360, Math.round(playbackDelay() * 0.22)));
+}
+
 function scheduleNextTurn(delay = Math.round(playbackDelay() * 0.72)) {
   clearPlaybackTimer();
   state.playbackTimer = window.setTimeout(() => {
@@ -743,11 +776,15 @@ async function revealNextTurn() {
   const generation = state.playbackGeneration;
   const turn = state.result.transcript[state.cursor];
   updateProgress(turn.turn);
-  dom.transcript.append(userMessage(turn));
+  const customerTyping = userTypingMessage(turn);
+  dom.transcript.append(customerTyping);
   scrollToLatest();
 
-  const userPause = Math.min(440, Math.round(playbackDelay() * 0.34));
-  if (!(await wait(userPause, generation))) return;
+  if (!(await wait(customerTypingDelay(turn.user.message), generation))) return;
+  customerTyping.replaceWith(userMessage(turn));
+  scrollToLatest();
+
+  if (!(await wait(readingPause(), generation))) return;
   const calculationCard = typingMessage(turn);
   dom.transcript.append(calculationCard);
   scrollToLatest();
@@ -757,6 +794,9 @@ async function revealNextTurn() {
     : Math.max(1000, Math.min(2100, Math.round(playbackDelay() * 1.25)));
   if (!(await wait(thinkingPause, generation))) return;
   completeCalculationMessage(calculationCard, turn);
+  scrollToLatest();
+
+  if (!(await wait(replyPause(), generation))) return;
   dom.transcript.append(assistantMessage(turn));
   state.cursor += 1;
   state.animating = false;
