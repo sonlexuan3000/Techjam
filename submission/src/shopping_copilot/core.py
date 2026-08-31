@@ -183,6 +183,12 @@ class SessionState:
     pre_override_recommendations: set[str] = field(default_factory=set)
     last_recommendations: tuple[str, ...] = ()
     last_recommendations_scored: bool = False
+    last_hypothesis_count: int = 0
+    last_focus_count: int = 0
+    last_recovery_count: int = 0
+    last_dp_state_count: int = 0
+    last_retrieval_mode: str = "uninitialized"
+    last_policy_mode: str = "uninitialized"
 
 
 class Agent:
@@ -398,6 +404,26 @@ class Agent:
         """Expose the shared NLP state to the repository's stress benchmark."""
 
         return self.intent_tracker.debug_state(session_id)
+
+    def debug_algorithm_stats(self, session_id: str) -> dict:
+        """Return target-free per-turn diagnostics for local visualizations."""
+
+        state = self.sessions.get(session_id)
+        if state is None:
+            raise KeyError(f"unknown session: {session_id}")
+        return {
+            "hypothesis_count": state.last_hypothesis_count,
+            "focus_count": state.last_focus_count,
+            "recovery_count": state.last_recovery_count,
+            "evidence_count": len(state.messages),
+            "rejected_count": len(state.rejected),
+            "dp_state_count": state.last_dp_state_count,
+            "selected_k": len(state.last_recommendations),
+            "retrieval_mode": state.last_retrieval_mode,
+            "policy_mode": state.last_policy_mode,
+            "prior_mode": self.prior_field,
+            "nlp_fallback": state.nlp_fallback,
+        }
 
     def debug_clue_candidates(
         self,
@@ -1024,24 +1050,41 @@ class Agent:
             or recovery
             or state.current_candidates
         )
+        used_lexical_fallback = False
         if not ranked and len(state.messages) == 1:
             ranked = self._lexical_fallback(state)
+            used_lexical_fallback = bool(ranked)
 
+        dp_state_count = 0
         if effective_top_k == 0:
             recommendation_limit = 0
+            policy_mode = "disabled"
+        elif not ranked:
+            recommendation_limit = 0
+            policy_mode = "no_candidates"
         elif state.nlp_fallback and not state.focus_candidates:
             recommendation_limit = min(
                 effective_top_k,
                 {1: 1, 2: 2}.get(int(turn), 10),
                 len(ranked),
             )
+            policy_mode = "recovery_schedule"
         else:
+            pre_override_guard = (
+                state.scenario == "intent_override"
+                and not state.override_applied
+            )
             recommendation_limit = self._recommendation_limit(
                 state,
                 ranked,
                 turn,
                 effective_top_k,
             )
+            if pre_override_guard:
+                policy_mode = "override_guard"
+            else:
+                policy_mode = "finite_horizon_dp"
+                dp_state_count = len(self._dp_cache)
         recommendations = tuple(ranked[:recommendation_limit])
         state.last_recommendations = recommendations
         if not state.override_seen:
@@ -1049,6 +1092,22 @@ class Agent:
         state.last_recommendations_scored = (
             state.scenario != "intent_override" or state.override_applied
         )
+        if used_lexical_fallback:
+            retrieval_mode = "lexical_fallback"
+        elif not state.nlp_fallback:
+            retrieval_mode = "exact_protocol"
+        elif state.focus_candidates:
+            retrieval_mode = "focus_tier"
+        elif recovery:
+            retrieval_mode = "recovery_tier"
+        else:
+            retrieval_mode = "empty"
+        state.last_hypothesis_count = len(ranked)
+        state.last_focus_count = len(state.focus_candidates)
+        state.last_recovery_count = len(recovery)
+        state.last_dp_state_count = dp_state_count
+        state.last_retrieval_mode = retrieval_mode
+        state.last_policy_mode = policy_mode
 
         response = {
             "message": "Which two product details matter most to you?",

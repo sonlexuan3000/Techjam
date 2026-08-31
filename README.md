@@ -173,8 +173,8 @@ Reproduce the disclosed organizer public development result with:
 make integration-check
 ```
 
-To choose a public session and watch the agent/customer exchange as an animated
-chat, run:
+To choose a public or generated-development session and watch the
+agent/customer exchange as an animated chat, run:
 
 ```bash
 make frontend

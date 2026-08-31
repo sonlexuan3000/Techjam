@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+from collections import Counter
 import unittest
 
 from frontend.server import (
     DEFAULT_CANDIDATE_NAME,
     DEFAULT_ENTRYPOINT,
+    DEFAULT_GENERATED_DATASET,
+    DEFAULT_GENERATED_SESSION_LIMIT,
     SimulationService,
     UnknownSessionError,
+    label_sessions,
     picker_session,
     product_view,
+    select_generated_sessions,
 )
 
 
@@ -59,6 +64,22 @@ class ScriptedAgent:
             },
         )
 
+    def debug_algorithm_stats(self, session_id: str) -> dict:
+        turn = self.respond_calls[-1][2]
+        return {
+            "hypothesis_count": 40 - turn,
+            "focus_count": 40 - turn,
+            "recovery_count": 0,
+            "evidence_count": turn,
+            "rejected_count": max(0, turn - 1),
+            "dp_state_count": 20 + turn,
+            "selected_k": 3,
+            "retrieval_mode": "exact_protocol",
+            "policy_mode": "finite_horizon_dp",
+            "prior_mode": "uniform",
+            "nlp_fallback": False,
+        }
+
 
 def service_for(test_sample: dict, agent: ScriptedAgent) -> SimulationService:
     target_product = {
@@ -103,15 +124,57 @@ class FrontendSimulationTests(unittest.TestCase):
             DEFAULT_CANDIDATE_NAME,
             "Offline review-prior inverse-DP · production",
         )
+        self.assertEqual(DEFAULT_GENERATED_DATASET.name, "dev_set.jsonl")
+        self.assertEqual(DEFAULT_GENERATED_SESSION_LIMIT, 20)
 
     def test_picker_payload_never_exposes_ground_truth_or_hidden_intent(self) -> None:
-        payload = picker_session(sample())
+        payload = picker_session(label_sessions([sample()], "public")[0])
 
         self.assertNotIn("ground_truth", payload)
         self.assertNotIn("intent_card", payload)
         self.assertNotIn("behavior", payload)
+        self.assertNotIn("_frontend_dataset_source", payload)
         self.assertEqual(payload["sample_id"], "test_buying")
+        self.assertEqual(payload["dataset_source"], "public")
         self.assertEqual(payload["user_profile"]["preference_tags"], ["comfort", "fit"])
+
+    def test_generated_picker_fields_are_derived_without_target_data(self) -> None:
+        generated = sample(scenario="boundary")
+        generated.pop("difficulty_bucket")
+        generated.pop("category_bucket")
+        generated = label_sessions([generated], "generated_dev")[0]
+
+        payload = picker_session(generated)
+
+        self.assertEqual(payload["dataset_source"], "generated_dev")
+        self.assertEqual(payload["difficulty_bucket"], "medium")
+        self.assertEqual(payload["category_bucket"], "clothing")
+        self.assertNotIn("ground_truth", payload)
+
+    def test_generated_preview_is_deterministic_and_scenario_proportional(self) -> None:
+        scenario_counts = {
+            "buying": 40,
+            "browsing": 40,
+            "intent_override": 15,
+            "boundary": 5,
+        }
+        generated = [
+            {"sample_id": f"generated_{scenario}_{index:03d}", "scenario_type": scenario}
+            for scenario, count in scenario_counts.items()
+            for index in range(count)
+        ]
+
+        selected = select_generated_sessions(generated, 20)
+        selected_again = select_generated_sessions(list(reversed(generated)), 20)
+
+        self.assertEqual(
+            Counter(item["scenario_type"] for item in selected),
+            Counter({"buying": 8, "browsing": 8, "intent_override": 3, "boundary": 1}),
+        )
+        self.assertEqual(
+            [item["sample_id"] for item in selected],
+            [item["sample_id"] for item in selected_again],
+        )
 
     def test_simulation_hydrates_ranked_products_and_stops_on_hit(self) -> None:
         agent = ScriptedAgent(
@@ -141,6 +204,43 @@ class FrontendSimulationTests(unittest.TestCase):
         self.assertTrue(recommendations[1]["is_target"])
         self.assertEqual(recommendations[1]["title"], "Target cotton shirt")
         self.assertEqual(agent.respond_calls[0][3], 10)
+        calculation = result["transcript"][0]["assistant"]["calculation"]
+        self.assertEqual(
+            {
+                "catalog_products": calculation["catalog_products"],
+                "shortlist_size": calculation["shortlist_size"],
+                "new_products": calculation["new_products"],
+                "products_shown": calculation["products_shown"],
+                "turn": calculation["turn"],
+            },
+            {
+                "catalog_products": 2,
+                "shortlist_size": 2,
+                "new_products": 2,
+                "products_shown": 2,
+                "turn": 1,
+            },
+        )
+        self.assertGreaterEqual(calculation["elapsed_ms"], 0)
+        self.assertEqual(calculation["hypothesis_count"], 39)
+        self.assertEqual(calculation["evidence_count"], 1)
+        self.assertEqual(calculation["dp_state_count"], 21)
+        self.assertEqual(calculation["selected_k"], 3)
+        self.assertEqual(calculation["retrieval_mode"], "exact_protocol")
+        self.assertEqual(calculation["policy_mode"], "finite_horizon_dp")
+        self.assertEqual(calculation["prior_mode"], "uniform")
+        self.assertNotIn("target", calculation)
+        self.assertNotIn("target_rank", calculation)
+
+    def test_session_listing_reports_dataset_source_counts(self) -> None:
+        generated_sample = label_sessions([sample()], "generated_dev")[0]
+        service = service_for(generated_sample, ScriptedAgent({}))
+
+        payload = service.list_sessions()
+
+        self.assertEqual(payload["total"], 1)
+        self.assertEqual(payload["source_counts"], {"generated_dev": 1})
+        self.assertEqual(payload["sessions"][0]["dataset_source"], "generated_dev")
 
     def test_override_target_is_not_scored_until_override_is_applied(self) -> None:
         override_behavior = {
@@ -179,6 +279,12 @@ class FrontendSimulationTests(unittest.TestCase):
             "Actually, ignore red. What I need is: color: blue.",
         )
         self.assertTrue(result["transcript"][1]["assistant"]["recommendations"][0]["is_target"])
+        first_calculation = result["transcript"][0]["assistant"]["calculation"]
+        second_calculation = result["transcript"][1]["assistant"]["calculation"]
+        self.assertEqual(first_calculation["new_products"], 1)
+        self.assertEqual(first_calculation["products_shown"], 1)
+        self.assertEqual(second_calculation["new_products"], 0)
+        self.assertEqual(second_calculation["products_shown"], 1)
 
     def test_replays_reuse_one_candidate_session_slot(self) -> None:
         agent = ScriptedAgent(

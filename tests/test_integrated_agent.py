@@ -101,6 +101,15 @@ class IntegratedAgentTest(unittest.TestCase):
 
         self.assertEqual(len(first["recommendations"]), 1)
         self.assertEqual(second["recommendations"], [{"parent_asin": "B_TARGET"}])
+        diagnostics = agent.debug_algorithm_stats("session")
+        self.assertEqual(diagnostics["hypothesis_count"], 1)
+        self.assertEqual(diagnostics["evidence_count"], 2)
+        self.assertEqual(diagnostics["selected_k"], 1)
+        self.assertGreater(diagnostics["dp_state_count"], 0)
+        self.assertEqual(diagnostics["retrieval_mode"], "exact_protocol")
+        self.assertEqual(diagnostics["policy_mode"], "finite_horizon_dp")
+        self.assertEqual(diagnostics["prior_mode"], "verified_reviews_365d")
+        self.assertNotIn("target", diagnostics)
 
     def test_response_contract_and_session_lifecycle(self) -> None:
         agent = Agent(self.catalog_path)

@@ -293,6 +293,10 @@ button:disabled {
   gap: 8px;
 }
 
+.filter-row .source-filter {
+  grid-column: 1 / -1;
+}
+
 .filter-row select,
 .speed-control select {
   width: 100%;
@@ -621,6 +625,16 @@ button:disabled {
   color: #53605c;
   background: #ebe8e0;
   text-transform: capitalize;
+}
+
+.badge.dataset-source.public {
+  color: #385a51;
+  background: #dceae5;
+}
+
+.badge.dataset-source.generated-dev {
+  color: #78531b;
+  background: #f6e6bf;
 }
 
 .badge.buying {
@@ -1389,16 +1403,17 @@ button:disabled {
   margin-bottom: 22px;
 }
 
+.typing-row.calculation-complete {
+  margin-bottom: 12px;
+}
+
 .typing-bubble {
   position: relative;
-  display: flex;
-  min-width: 265px;
-  max-width: min(360px, calc(100vw - 470px));
-  gap: 11px;
-  align-items: center;
+  display: grid;
+  width: min(410px, 100%);
+  min-width: 350px;
+  max-width: min(410px, calc(100vw - 470px));
   overflow: hidden;
-  width: fit-content;
-  padding: 11px 14px 13px;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 16px 6px 16px 16px;
@@ -1417,6 +1432,26 @@ button:disabled {
   animation: thinking-progress 1.15s infinite ease-in-out;
 }
 
+.calculation-complete .typing-bubble {
+  border-color: #cfe2d7;
+}
+
+.calculation-complete .typing-bubble::after {
+  opacity: 0;
+  animation: none;
+}
+
+.calculation-complete .thinking-head {
+  background: #fbfdfc;
+}
+
+.thinking-head {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  padding: 12px 14px 11px;
+}
+
 .thinking-spinner {
   width: 25px;
   height: 25px;
@@ -1426,6 +1461,19 @@ button:disabled {
   border-right-color: var(--mint-strong);
   border-radius: 50%;
   animation: rotate 0.78s infinite linear;
+}
+
+.thinking-check {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #fff;
+  background: var(--mint-dark);
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .thinking-copy {
@@ -1471,6 +1519,55 @@ button:disabled {
 
 .thinking-dots i:nth-child(3) {
   animation-delay: 280ms;
+}
+
+.thinking-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 3px;
+  background: #f7faf8;
+  border-top: 1px solid var(--line);
+}
+
+.thinking-stat {
+  min-width: 0;
+  padding: 9px 10px 10px;
+  border-left: 1px solid var(--line);
+  animation: stat-in 260ms ease both;
+  animation-delay: var(--stat-delay, 0ms);
+}
+
+.calculation-complete .thinking-stat {
+  animation: none;
+}
+
+.thinking-stat:first-child {
+  border-left: 0;
+}
+
+.thinking-stat strong,
+.thinking-stat span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thinking-stat strong {
+  color: #314139;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  letter-spacing: -0.015em;
+}
+
+.thinking-stat span {
+  margin-top: 2px;
+  color: #8a938f;
+  font-size: 8px;
+  font-weight: 730;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .outcome-card {
@@ -1757,6 +1854,17 @@ button:disabled {
   }
 }
 
+@keyframes stat-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes message-in {
   from {
     opacity: 0;
@@ -1924,7 +2032,7 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .filter-row label:last-child {
+  .filter-row .difficulty-filter {
     display: none;
   }
 
@@ -2024,8 +2132,21 @@ button:disabled {
   }
 
   .typing-bubble {
-    min-width: min(250px, calc(100vw - 58px));
+    width: min(350px, calc(100vw - 58px));
+    min-width: min(300px, calc(100vw - 58px));
     max-width: calc(100vw - 58px);
+  }
+
+  .thinking-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .thinking-stat:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .thinking-stat:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
   }
 
   .thinking-copy > span {

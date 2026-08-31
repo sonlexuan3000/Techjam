@@ -47,7 +47,7 @@ demo: data
 submission-archive:
 	$(PYTHON) scripts/build_submission_archive.py
 
-frontend: data
+frontend: unseen-data
 	$(VENV_PYTHON) frontend/server.py
 
 evaluate: data

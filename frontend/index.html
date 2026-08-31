@@ -29,7 +29,7 @@
 
         <div class="rail-heading">
           <div>
-            <p class="eyebrow">Public dataset</p>
+            <p class="eyebrow">Evaluation datasets</p>
             <h1>Choose a session</h1>
           </div>
           <button class="icon-button" id="random-session" type="button" title="Pick a random session">
@@ -51,6 +51,14 @@
         </div>
 
         <div class="filter-row">
+          <label class="source-filter">
+            <span class="sr-only">Dataset</span>
+            <select id="source-filter">
+              <option value="all">All datasets</option>
+              <option value="public">Public 200</option>
+              <option value="generated_dev">Generated dev preview</option>
+            </select>
+          </label>
           <label>
             <span class="sr-only">Scenario</span>
             <select id="scenario-filter">
@@ -61,7 +69,7 @@
               <option value="boundary">Boundary</option>
             </select>
           </label>
-          <label>
+          <label class="difficulty-filter">
             <span class="sr-only">Difficulty</span>
             <select id="difficulty-filter">
               <option value="all">Any difficulty</option>
@@ -156,7 +164,7 @@
               <p class="eyebrow">Dialogue simulator</p>
               <h3>See the agent think in turns</h3>
               <p class="empty-copy">
-                Pick any evaluation session, then watch the customer policy and shopping agent
+                Pick a public or generated-dev session, then watch the customer policy and shopping agent
                 exchange messages until the hidden product is found—or turn 10 is reached.
               </p>
               <div class="empty-actions">
