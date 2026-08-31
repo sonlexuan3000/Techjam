@@ -195,25 +195,6 @@ class SimulationService:
             )
             view["rank"] = rank
             view["is_target"] = target_is_eligible and parent_asin == target
-            products = getattr(self.agent, "products", {})
-            product_intent = products.get(parent_asin) if isinstance(products, dict) else None
-            prior_field = getattr(self.agent, "prior_field", None)
-            prior_weight = getattr(product_intent, "prior_weight", None)
-            if isinstance(prior_weight, (int, float)) and math.isfinite(prior_weight):
-                if prior_field == "verified_reviews_365d":
-                    smoothing = float(getattr(self.agent, "prior_smoothing", 0.0) or 0.0)
-                    raw_count = max(0.0, float(prior_weight) - smoothing)
-                    view["ranking_signal"] = {
-                        "label": "Verified reviews · 365d",
-                        "value": int(raw_count) if raw_count.is_integer() else raw_count,
-                        "weight": float(prior_weight),
-                    }
-                elif prior_field == "rating_number":
-                    view["ranking_signal"] = {
-                        "label": "Catalog ratings",
-                        "value": int(max(0.0, float(prior_weight))),
-                        "weight": float(prior_weight),
-                    }
             result.append(view)
         return result
 
@@ -244,19 +225,34 @@ class SimulationService:
             "k": scalar(policy.get("k")),
         }
 
+        algorithm_stats: dict[str, Any] = {}
+        stats_getter = getattr(self.agent, "debug_algorithm_stats", None)
+        if callable(stats_getter):
+            try:
+                candidate_stats = stats_getter(session_id)
+                if isinstance(candidate_stats, dict):
+                    algorithm_stats = candidate_stats
+            except Exception:
+                # Optional observability must never alter the simulated run.
+                algorithm_stats = {}
+
         sessions = getattr(self.agent, "sessions", None)
         state = sessions.get(session_id) if isinstance(sessions, dict) else None
-        if state is None:
+        if state is None and not algorithm_stats:
             return legacy_trace
 
         def count(name: str) -> int:
             value = getattr(state, name, ())
             return len(value) if isinstance(value, (dict, list, set, tuple)) else 0
 
-        nlp_fallback = bool(getattr(state, "nlp_fallback", False))
-        focus_count = count("focus_candidates")
-        trusted_count = count("trusted_universe")
-        active_count = focus_count if focus_count else count("current_candidates")
+        nlp_fallback = bool(
+            algorithm_stats.get("nlp_fallback", getattr(state, "nlp_fallback", False))
+        )
+        focus_count = algorithm_stats.get("focus_count", count("focus_candidates"))
+        trusted_count = algorithm_stats.get("recovery_count", count("trusted_universe"))
+        active_count = algorithm_stats.get("hypothesis_count")
+        if not isinstance(active_count, int) or isinstance(active_count, bool) or active_count < 0:
+            active_count = focus_count if focus_count else count("current_candidates")
         if nlp_fallback and not active_count:
             active_count = trusted_count
 
@@ -300,63 +296,27 @@ class SimulationService:
 
         scenario = scalar(getattr(state, "scenario", None))
         override_applied = bool(getattr(state, "override_applied", True))
-        pre_override = scenario == "intent_override" and not override_applied
-        prior_field = str(getattr(self.agent, "prior_field", "uniform"))
-        prior_labels = {
-            "verified_reviews_365d": "verified reviews (365d) + 1",
-            "rating_number": "catalog rating count",
-            "uniform": "uniform belief",
-        }
-        uses_dp = not pre_override and (not nlp_fallback or focus_count > 0)
-        if pre_override:
-            decision_policy = "pre-override guard"
-        elif uses_dp:
-            decision_policy = "finite-horizon DP"
+        retrieval_mode = str(algorithm_stats.get("retrieval_mode") or "")
+        policy_mode = str(algorithm_stats.get("policy_mode") or "")
+        if retrieval_mode in {"focus_tier", "recovery_tier", "lexical_fallback"}:
+            route = "nlp-recovery"
         else:
-            decision_policy = "conservative recovery"
-
-        if pre_override:
-            explanation = (
-                "Recommendations are not scoreable until the scheduled intent "
-                "override appears, so the pre-override guard returned K=1."
-            )
-        elif not nlp_fallback:
-            hypothesis_label = "hypothesis" if active_count == 1 else "hypotheses"
-            explanation = (
-                f"Exact protocol inversion retained {active_count:,} product "
-                f"{hypothesis_label}. The prior ordered the pool; finite-horizon DP "
-                f"returned K={recommendation_count}."
-            )
-        elif focus_count:
-            explanation = (
-                f"NLP recovery kept {trusted_count:,} products recoverable and "
-                f"promoted {focus_count:,} grounded matches. Finite-horizon DP "
-                f"returned K={recommendation_count} from that focus tier."
-            )
-        else:
-            explanation = (
-                f"No safe focus match was found, so {trusted_count:,} products "
-                f"remained recoverable and the conservative policy returned "
-                f"K={recommendation_count}."
-            )
+            route = "nlp-recovery" if nlp_fallback else "exact-inverse"
+        phase = (
+            "intent-override"
+            if policy_mode == "override_guard"
+            or (scenario == "intent_override" and not override_applied)
+            else None
+        )
 
         return {
-            **legacy_trace,
-            "route": "nlp-recovery" if nlp_fallback else "exact-inverse",
+            "route": route,
+            "phase": phase,
             "scenario": scenario,
-            "policy": decision_policy,
             "k": recommendation_count,
-            "requested_k": TOP_K,
-            "initial_candidates": count("initial_candidates"),
             "active_candidates": active_count,
-            "focus_candidates": focus_count,
-            "trusted_candidates": trusted_count,
-            "rejected_candidates": count("rejected"),
-            "prior": prior_labels.get(prior_field, prior_field),
-            "override_seen": bool(getattr(state, "override_seen", False)),
             "override_applied": override_applied,
-            "evidence": evidence[:4],
-            "explanation": explanation,
+            "evidence": evidence[-2:],
         }
 
     def simulate(self, sample_id: str) -> dict[str, Any]:
@@ -393,6 +353,7 @@ class SimulationService:
         hit_turn: int | None = None
         best_rank: int | None = None
         unique_products: set[str] = set()
+        previous_candidate_count = len(self.catalog_ids)
 
         for turn in range(1, MAX_TURNS + 1):
             warning: str | None = None
@@ -414,6 +375,11 @@ class SimulationService:
                 if warning is None
                 else {}
             )
+            if agent_trace.get("route"):
+                agent_trace["previous_candidates"] = previous_candidate_count
+                active_candidates = agent_trace.get("active_candidates")
+                if isinstance(active_candidates, int) and active_candidates >= 0:
+                    previous_candidate_count = active_candidates
             unique_products.update(ranked_ids)
             eligible_hit = override_applied and target in ranked_ids
             if eligible_hit:

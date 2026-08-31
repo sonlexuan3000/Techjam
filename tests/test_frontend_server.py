@@ -113,6 +113,24 @@ class TraceableAgent(ScriptedAgent):
             "negative_evidence": [],
         }
 
+    def debug_algorithm_stats(self, session_id: str) -> dict:
+        state = self.sessions[session_id]
+        return {
+            "hypothesis_count": len(state.focus_candidates or state.trusted_universe),
+            "focus_count": len(state.focus_candidates),
+            "recovery_count": len(state.trusted_universe),
+            # Deliberately differs from the normalized response length: the
+            # frontend must display what the evaluator actually accepted.
+            "selected_k": 7,
+            "retrieval_mode": "recovery_tier" if self.nlp_fallback else "exact_protocol",
+            "policy_mode": (
+                "override_guard"
+                if self.pre_override
+                else "recovery_schedule" if self.nlp_fallback else "finite_horizon_dp"
+            ),
+            "nlp_fallback": self.nlp_fallback,
+        }
+
 
 def service_for(test_sample: dict, agent: ScriptedAgent) -> SimulationService:
     target_product = {
@@ -213,19 +231,14 @@ class FrontendSimulationTests(unittest.TestCase):
         trace = turn["assistant"]["trace"]
 
         self.assertEqual(trace["route"], "exact-inverse")
-        self.assertEqual(trace["policy"], "finite-horizon DP")
         self.assertEqual(trace["active_candidates"], 2)
+        self.assertEqual(trace["previous_candidates"], 2)
         self.assertEqual(trace["k"], 1)
-        self.assertEqual(trace["prior"], "verified reviews (365d) + 1")
         self.assertEqual(trace["evidence"][0]["text"], "cotton")
-        self.assertEqual(
-            turn["assistant"]["recommendations"][0]["ranking_signal"],
-            {
-                "label": "Verified reviews · 365d",
-                "value": 6,
-                "weight": 7.0,
-            },
-        )
+        self.assertNotIn("ranking_signal", turn["assistant"]["recommendations"][0])
+        self.assertNotIn("policy", trace)
+        self.assertNotIn("prior", trace)
+        self.assertNotIn("explanation", trace)
 
         forbidden = {"target", "ground_truth", "target_rank", "is_target", "hit"}
 
@@ -260,10 +273,9 @@ class FrontendSimulationTests(unittest.TestCase):
         trace = result["transcript"][0]["assistant"]["trace"]
 
         self.assertEqual(trace["scenario"], "intent_override")
-        self.assertEqual(trace["policy"], "pre-override guard")
+        self.assertEqual(trace["phase"], "intent-override")
         self.assertEqual(trace["k"], 1)
         self.assertFalse(trace["override_applied"])
-        self.assertIn("not scoreable", trace["explanation"])
 
     def test_recovery_trace_keeps_the_trusted_universe_visible(self) -> None:
         agent = TraceableAgent(
@@ -287,8 +299,6 @@ class FrontendSimulationTests(unittest.TestCase):
         trace = result["transcript"][0]["assistant"]["trace"]
 
         self.assertEqual(trace["route"], "nlp-recovery")
-        self.assertEqual(trace["policy"], "conservative recovery")
-        self.assertEqual(trace["trusted_candidates"], 2)
         self.assertEqual(trace["active_candidates"], 2)
 
     def test_override_target_is_not_scored_until_override_is_applied(self) -> None:

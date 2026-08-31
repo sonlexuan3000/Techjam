@@ -37,11 +37,11 @@ Optional flags are `--host`, `--port`, `--catalog`, and `--dataset`.
 - `POST /api/simulate` accepts `{"sample_id": "public_0001"}` and runs the
   chosen candidate against the canonical simulated customer.
 - The returned transcript contains the assistant's text, requested attribute,
-  catalog-enriched recommendation cards, and a read-only Agent decision trace
-  for every turn. The trace exposes the inferred route, active/focus/recovery
-  counts, grounded evidence, selected prior, rejected count, chosen K, and the
-  actual decision policy (`finite-horizon DP`, `conservative recovery`, or the
-  pre-override K=1 guard).
+  catalog-enriched recommendation cards, and a compact target-free candidate
+  funnel for every turn: previous pool, remaining candidates, products shown,
+  and up to two latest grounded evidence values. NLP recovery and an active
+  intent-override phase receive a small badge; deeper diagnostics stay in the
+  technical documentation instead of crowding the video view.
 - Playback shows a left-aligned customer typing indicator before each message,
   followed by short reading and reply pauses scaled to the selected speed.
 - The browser can auto-play, pause, step through, replay, filter sessions, pick

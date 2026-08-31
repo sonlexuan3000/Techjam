@@ -84,7 +84,7 @@ First-hit turns for the final backend are `90 / 71 / 20 / 19` across turns
 `1 / 2 / 3 / 4`. A turn-one hit is expected when the exact opening message
 leaves a small hypothesis pool and the review prior ranks the target first; it
 does not imply that ground truth was passed to the Agent. The Agent does not
-load the public session file, and the frontend captures its decision trace
+load the public session file, and the frontend captures its candidate trace
 before comparing returned ASINs with evaluator ground truth.
 
 Reproduce the aggregate from the released evaluator and public set:

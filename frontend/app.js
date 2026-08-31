@@ -457,11 +457,6 @@ function formatCompactNumber(value) {
   );
 }
 
-function hypothesisCount(value) {
-  const number = Number(value);
-  return `${formatCompactNumber(value)} ${number === 1 ? "hypothesis" : "hypotheses"}`;
-}
-
 function productCard(product) {
   const card = createElement("article", `product-card${product.is_target ? " is-target" : ""}`);
   const art = createElement("div", "product-art");
@@ -473,15 +468,6 @@ function productCard(product) {
   const copy = createElement("div", "product-copy");
   copy.append(createElement("span", "product-store", product.store || product.category || "Product"));
   copy.append(createElement("p", "product-title", product.title));
-  if (product.ranking_signal) {
-    const signal = createElement("div", "product-signal");
-    signal.append(
-      createElement("span", "", product.ranking_signal.label),
-      createElement("strong", "", formatCompactNumber(product.ranking_signal.value)),
-    );
-    signal.title = `Belief weight used by ranking: ${product.ranking_signal.weight}`;
-    copy.append(signal);
-  }
   const meta = createElement("div", "product-meta");
   meta.append(createElement("span", "product-price", formatPrice(product.price)));
   const rating = createElement("span", "rating");
@@ -501,35 +487,39 @@ function productCard(product) {
 function traceRow(trace) {
   if (trace?.route) {
     const panel = createElement("section", "decision-trace");
-    panel.setAttribute("aria-label", "Agent decision trace");
+    panel.setAttribute("aria-label", "Candidate filtering");
 
     const heading = createElement("div", "decision-trace-heading");
-    heading.append(
-      createElement("span", "decision-trace-title", "Agent decision trace"),
-      createElement("span", `route-chip ${trace.route}`, scenarioLabel(trace.route)),
-    );
+    heading.append(createElement("span", "decision-trace-title", "Candidate filtering"));
+    const exceptionalRoute = trace.phase || (trace.route !== "exact-inverse" ? trace.route : null);
+    if (exceptionalRoute) {
+      heading.append(
+        createElement(
+          "span",
+          `route-chip ${exceptionalRoute}`,
+          exceptionalRoute === "intent-override"
+            ? "Intent override"
+            : "NLP recovery",
+        ),
+      );
+    }
     panel.append(heading);
 
-    const row = createElement("div", "trace-row");
-    const candidateLabel = trace.route === "nlp-recovery" && trace.focus_candidates
-      ? `${formatCompactNumber(trace.focus_candidates)} focus matches`
-      : hypothesisCount(trace.active_candidates);
-    const values = [
-      candidateLabel,
-      `${trace.policy || "policy"} · K=${trace.k ?? 0}`,
-      trace.prior ? `prior: ${trace.prior}` : null,
-      trace.rejected_candidates ? `${formatCompactNumber(trace.rejected_candidates)} rejected` : null,
-      trace.override_seen ? "override applied" : null,
-    ].filter(Boolean);
-    values.forEach((value) => row.append(createElement("span", "trace-chip", value)));
-    panel.append(row);
+    const funnel = createElement("div", "candidate-funnel");
+    funnel.append(
+      createElement("strong", "", formatCompactNumber(trace.previous_candidates)),
+      createElement("span", "funnel-arrow", "→"),
+      createElement("strong", "", formatCompactNumber(trace.active_candidates)),
+      createElement("span", "", "candidates"),
+      createElement("span", "funnel-arrow", "→"),
+      createElement("strong", "", `top ${trace.k ?? 0}`),
+      createElement("span", "", "shown"),
+    );
+    panel.append(funnel);
 
-    if (trace.explanation) {
-      panel.append(createElement("p", "decision-explanation", trace.explanation));
-    }
     if (Array.isArray(trace.evidence) && trace.evidence.length) {
       const evidence = createElement("div", "evidence-row");
-      evidence.append(createElement("span", "evidence-label", "Grounded evidence"));
+      evidence.append(createElement("span", "evidence-label", "Matched evidence"));
       trace.evidence.forEach((item) => {
         const chip = createElement(
           "span",
@@ -612,7 +602,7 @@ function assistantMessage(turn) {
   return row;
 }
 
-function outcomeCard(outcome, trace = null) {
+function outcomeCard(outcome) {
   const card = createElement("section", `outcome-card${outcome.hit ? "" : " miss"}`);
   const icon = createElement("div", "outcome-icon");
   icon.innerHTML = outcome.hit
@@ -634,15 +624,6 @@ function outcomeCard(outcome, trace = null) {
         : `${outcome.target.parent_asin} was not present in a scored list by turn 10.`,
     ),
   );
-  if (trace?.route) {
-    copy.append(
-      createElement(
-        "p",
-        "decision-note",
-        `Agent decision: ${scenarioLabel(trace.route)} · ${hypothesisCount(trace.active_candidates)} · ${trace.policy} K=${trace.k}.`,
-      ),
-    );
-  }
   copy.append(
     createElement(
       "p",
@@ -755,8 +736,7 @@ function finalizePlayback() {
   state.complete = true;
   state.playing = false;
   state.animating = false;
-  const finalTrace = state.result.transcript[state.result.transcript.length - 1]?.assistant?.trace;
-  dom.transcript.append(outcomeCard(state.result.outcome, finalTrace));
+  dom.transcript.append(outcomeCard(state.result.outcome));
   updateProgress(
     state.result.outcome.turns,
     true,
@@ -877,7 +857,7 @@ function transcriptText() {
     }
     if (turn.assistant.trace?.route) {
       lines.push(
-        `Decision trace: ${turn.assistant.trace.route}; ${turn.assistant.trace.active_candidates} active hypotheses; ${turn.assistant.trace.policy}; K=${turn.assistant.trace.k}.`,
+        `Candidate filtering: ${turn.assistant.trace.previous_candidates} -> ${turn.assistant.trace.active_candidates}; showing top ${turn.assistant.trace.k}.`,
       );
     }
     lines.push("");
