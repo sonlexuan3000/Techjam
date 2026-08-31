@@ -1,15 +1,21 @@
-# Experiments
+# Preserved experiments
 
-This directory stores competing implementations without changing the official
-Agent under `starter/`.
+This directory is development evidence, not the competition entrypoint. The
+selected runtime is exported from `submission/agent.py` and mirrored through
+`starter/agent.py` for the released evaluator.
 
-Use exactly one of these paths:
+The retained inverse-DP experiment records:
 
-```text
-experiments/nlp/<owner>-<approach>/
-experiments/algo/<owner>-<approach>/
-```
+- the original algorithm contribution and reviewed data-safe revision;
+- the uniform-prior and catalog `rating_number` ablation;
+- focused inverse-card, DP, state, and parity tests;
+- commands that reproduce the pre-integration comparison.
 
-Copy the appropriate `_template/README.md` into the new candidate folder. Read
-[`docs/EXPERIMENT_WORKFLOW.md`](../docs/EXPERIMENT_WORKFLOW.md) before opening a
-PR/MR.
+Candidates were isolated under `experiments/` during development so they could
+be benchmarked without replacing the official Agent. Empty scaffolding was
+removed from the final repository; the retained folder is a reproducible
+ablation record.
+
+For the shipped architecture and canonical metrics, use
+[`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) and
+[`docs/EVALUATION.md`](../docs/EVALUATION.md).

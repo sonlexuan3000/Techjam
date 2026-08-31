@@ -1,7 +1,13 @@
-# Submission Rules
+# Technical Agent Package Rules
 
-This document defines the participant submission requirements for the
-TechJam Conversational E-Commerce Search Challenge.
+> This document covers the Track 4 Agent package only. It is not the complete
+> event-submission checklist. The event also requires a Devpost description, a
+> public repository with README, and a public three-minute YouTube demo; verify
+> the current requirements on the
+> [official Devpost page](https://tiktoktechjam2026.devpost.com/).
+
+This document defines the technical package requirements for the TechJam
+Conversational E-Commerce Search Challenge.
 
 ## What Teams Must Submit
 

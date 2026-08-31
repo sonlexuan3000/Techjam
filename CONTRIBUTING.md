@@ -1,116 +1,48 @@
-# Team workflow
+# Contributing
 
-## Before coding
+InverseCart's competition backend is frozen under `submission/`. Changes should
+preserve the official Agent contract, reproducibility, and the distinction
+between generated development data and organizer evaluation data.
 
-1. Run `make setup`, `make test`, and `make unseen-data`.
-2. Read `docs/TEAM_ROLES.md` and stay inside the agreed module ownership.
-3. For a competing implementation, branch from `main` as
-   `exp/nlp/<owner>-<approach>` or `exp/algo/<owner>-<approach>`. Use a normal
-   `feat/...` or `test/...` branch only for shared infrastructure.
+## Local setup
 
-Do not commit directly to `main` during implementation. Use a pull request so a
-second teammate can review score changes and contract compatibility.
-
-## Competing NLP and algorithm implementations
-
-Do not add top-level folders such as `nlp-alice/` or `algo-bob/`, and do not
-replace the official baseline in an experiment PR. Use this layout instead:
-
-```text
-experiments/
-  nlp/<owner>-<approach>/
-  algo/<owner>-<approach>/
+```bash
+make setup
+make test
+make demo
 ```
 
-For example: `experiments/nlp/son-regex-catalog/` or
-`experiments/algo/an-information-gain/`. Including both owner and approach makes
-the folder understandable after team roles change.
+## Change guidelines
 
-Copy the matching `_template/README.md`, keep all variant-specific code and
-tests inside that one folder, and expose the official `reset`/`respond` Agent
-contract through an adapter. An experiment PR may not edit `starter/agent.py`,
-the active `starter/parser.py`, shared evaluator files, or another person's
-experiment. If shared infrastructure must change, open a separate PR first.
+- Keep the competition entrypoint at `submission/agent.py` and the local-harness
+  adapter at `starter/agent.py` compatible.
+- Do not modify the released evaluator, scoring configuration, public labels,
+  or catalog to improve a reported result.
+- Do not commit catalogs, generated sessions/results, virtual environments,
+  model weights, credentials, or private evaluation data.
+- Use generated-development data for algorithm comparisons. Treat the organizer
+  public 200 as an integration check, not a hyperparameter source.
+- Add focused tests for state transitions, filtering, recovery, overrides, and
+  response-contract changes.
+- Report every metric regression and keep claims scoped to the dataset and
+  protocol actually measured.
+- Preserve the standard-library-only runtime unless a new dependency has a
+  measured benefit and is declared in `submission/requirements.txt`.
 
-Detailed layout, comparison rules, and the winner-selection process are in
-[`docs/EXPERIMENT_WORKFLOW.md`](docs/EXPERIMENT_WORKFLOW.md). GitHub calls the
-review item a pull request; the same rules apply if the team calls it an MR.
-
-## Protected competition inputs
-
-Do not modify these files to improve a reported score:
-
-- `evaluator/local_evaluator.py`
-- `data/public_set.jsonl`
-- `docs/evaluation_config.json`
-- the downloaded `data/catalog.jsonl`
-
-Do not commit API keys, `.env`, generated results, catalog copies, organizer
-private data, or third-party datasets with unclear redistribution terms.
-
-## Pull request checklist
-
-Every NLP or algorithm experiment PR should include:
-
-- experiment type and folder path;
-- the exact baseline commit used for comparison;
-- the hypothesis and files changed;
-- independent 100-case state/grounding result before and after for NLP;
-- generated-dev score before and after for algorithms;
-- scenario-level regressions, if any;
-- Target Survival Rate and False Elimination Rate for filtering changes;
-- candidate-pool size before/after each newly applied constraint;
-- unit tests for new parser/state/policy behavior;
-- latency or memory impact when an index/model changes.
-
-Use the repository PR template. Report regressions as well as improvements;
-do not tune an implementation after seeing a sealed comparison set and then
-report that same set as unseen.
-
-Never run `make evaluate`, inspect public per-session failures, or use the
-organizer 200 to tune/select an experiment. Run the commands for your candidate
-type instead:
+## Pull-request checklist
 
 ```bash
 make test
-
-# NLP candidate and its shared baseline
-make human-stress
-make human-stress ENTRYPOINT=experiments/nlp/<owner>-<approach>/entrypoint.py
-
-# Algorithm candidate and its shared baseline
 make evaluate-unseen-dev
-make evaluate-candidate-dev ENTRYPOINT=experiments/algo/<owner>-<approach>/entrypoint.py
+make human-stress
+python3 submission/smoke.py --catalog data/catalog.jsonl
 ```
 
-The independent 100-case NLP fixture is model-generated and visible, so do not
-add rules for individual case IDs. The committed generated-data seed is also
-visible; the 800-row second split is only a shared regression check, not a truly
-hidden holdout. If the team wants one internal sealed check, the evaluation
-owner should generate it with a separate uncommitted seed and report only
-aggregate metrics.
+If the implementation is already frozen, also verify the deterministic bundle:
 
-Any PR that turns an inferred or soft constraint into a permanent hard deletion
-must explain why the target remains recoverable when parsing or metadata is
-wrong. An empty-pool fallback alone is insufficient because a wrong filter can
-leave a non-empty pool that no longer contains the target.
+```bash
+make submission-archive
+```
 
-## Integration rule
-
-Only the integration owner should resolve changes to `starter/agent.py`. Other
-owners implement and test their modules behind the interfaces documented in
-`docs/TEAM_ROLES.md`. A contract change needs agreement from the integration
-owner and every affected module owner before merge.
-
-Merging an experiment folder makes it available for comparison; it does not make
-that implementation the official Agent. After the comparison is frozen, the
-integration owner opens a separate integration PR for the selected NLP variant,
-the selected algorithm variant, and then benchmarks their combination. Only
-that frozen integration PR runs `make integration-check` on the organizer public
-200. A surprise there is investigated as an integration/protocol bug; it does
-not reopen candidate tuning on the public cases.
-
-The event build window starts on 29 August 2026 at 12:00 Singapore time. Keep
-the migration/setup commit separate, and make substantive implementation commits
-during the official window so the repository clearly demonstrates significant
-post-start development.
+Document the base commit, exact reproduction commands, before/after metrics,
+latency/cost changes, and known limitations in the pull request.
