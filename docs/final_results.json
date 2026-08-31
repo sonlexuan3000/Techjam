@@ -1,5 +1,6 @@
 {
   "backend": "InverseCart offline review-prior inverse-DP",
+  "backend_source_commit": "66e34e0312cdd1c00590e094f7ebda9640cd638e",
   "recorded_on": "2026-08-31",
   "selection_disclosure": {
     "algorithm_selected_on": "generated_development",
