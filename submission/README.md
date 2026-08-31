@@ -93,6 +93,11 @@ Technical Score on generated-dev.
 |---:|---:|---:|---:|---:|
 | 2,000 | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
 
+After code was frozen, the shared 800-session second split scored HR@10
+`0.9975`, MRR `0.980420`, MTTC `2.5850`, and Technical Score `0.961176`.
+That split is generated from a public repository seed, so it is a regression
+check rather than an organizer-private estimate.
+
 Measured on an Apple M4 with 50,000 products, startup was `5.75 s` with maximum
 RSS around `199 MiB`. Across 500 turns from 200 generated-dev sessions, response
 latency was `30.045 ms` mean, `2.368 ms` median, `136.585 ms` p95, and

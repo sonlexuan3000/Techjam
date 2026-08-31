@@ -47,6 +47,11 @@ The uniform prior applies to trusted inverse-DP hypotheses. In uncertain NLP
 recovery only, `rating_number` remains a tie-break among equally relevant
 catalog matches; it does not control eligibility or hard filtering.
 
+After the implementation was frozen at commit `f84a72e`, the shared 800-session
+second split scored HR@10 `0.9975`, MRR `0.980420`, MTTC `2.5850`, and Technical
+Score `0.961176`. Its seed is public, so this is a post-freeze regression check,
+not a claim about organizer-private performance.
+
 ## Performance and reproducibility
 
 The full catalog contains 50,000 products. An Apple M4 measurement showed

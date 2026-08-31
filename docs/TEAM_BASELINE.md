@@ -10,6 +10,11 @@ backend, not an organizer-private score prediction.
 | Selected uniform inverse-DP | 2,000 | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
 | Catalog `rating_number` ablation | 2,000 | 0.9935 | 0.975782 | 2.6860 | 0.955765 |
 
+Post-freeze, the shared 800-session second split scored HR@10 `0.9975`, MRR
+`0.980420`, MTTC `2.5850`, and Technical Score `0.961176`. The split has a
+public seed and is a regression check, not a private-test estimate. No
+per-session failure was used to modify the frozen algorithm.
+
 Candidate-safe reproduction:
 
 ```bash
