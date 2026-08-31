@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Serve the local TechJam session picker and conversation simulator.
 
-The server intentionally uses only the Python standard library. It loads one
+The server intentionally uses only the Python standard library.  It loads one
 candidate agent at startup, runs the evaluator's customer policy for a selected
-evaluation session, and returns a product-enriched transcript for the browser
-to play back.
+public session, and returns a product-enriched transcript for the browser to
+play back.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ import mimetypes
 from pathlib import Path
 import sys
 import threading
-import time
 import traceback
 from typing import Any
 from urllib.parse import urlparse
@@ -49,16 +48,6 @@ DEFAULT_ENTRYPOINT = (
 DEFAULT_CANDIDATE_NAME = "Offline review-prior inverse-DP · production"
 DEFAULT_CATALOG = PROJECT_ROOT / "data/catalog.jsonl"
 DEFAULT_DATASET = PROJECT_ROOT / "data/public_set.jsonl"
-DEFAULT_GENERATED_DATASET = PROJECT_ROOT / "data/unseen_eval/dev_set.jsonl"
-DEFAULT_GENERATED_SESSION_LIMIT = 20
-
-SESSION_SOURCE_FIELD = "_frontend_dataset_source"
-SCENARIO_DIFFICULTY = {
-    "buying": "easy",
-    "browsing": "medium",
-    "intent_override": "hard",
-    "boundary": "medium",
-}
 
 
 class UnknownSessionError(LookupError):
@@ -88,70 +77,6 @@ def product_view(product: dict[str, Any]) -> dict[str, Any]:
         "rating_number": product.get("rating_number"),
         "store": str(product.get("store") or ""),
     }
-
-
-def label_sessions(samples: list[dict], source: str) -> list[dict]:
-    """Copy session rows and attach frontend-only dataset provenance."""
-
-    return [{**sample, SESSION_SOURCE_FIELD: source} for sample in samples]
-
-
-def select_generated_sessions(samples: list[dict], limit: int) -> list[dict]:
-    """Select a deterministic scenario-proportional preview from generated dev."""
-
-    if limit < 0:
-        raise ValueError("generated session limit cannot be negative")
-    if limit == 0 or not samples:
-        return []
-
-    grouped: dict[str, list[dict]] = {}
-    for sample in samples:
-        scenario = str(sample.get("scenario_type") or "unknown")
-        grouped.setdefault(scenario, []).append(sample)
-    for group in grouped.values():
-        group.sort(key=lambda item: str(item.get("sample_id") or ""))
-
-    capped_limit = min(limit, len(samples))
-    total = len(samples)
-    ideals = {
-        scenario: capped_limit * len(group) / total
-        for scenario, group in grouped.items()
-    }
-    quotas = {
-        scenario: min(len(group), int(ideals[scenario]))
-        for scenario, group in grouped.items()
-    }
-    remaining = capped_limit - sum(quotas.values())
-    remainder_order = sorted(
-        grouped,
-        key=lambda scenario: (
-            ideals[scenario] - quotas[scenario],
-            len(grouped[scenario]),
-            scenario,
-        ),
-        reverse=True,
-    )
-    while remaining:
-        allocated = False
-        for scenario in remainder_order:
-            if quotas[scenario] >= len(grouped[scenario]):
-                continue
-            quotas[scenario] += 1
-            remaining -= 1
-            allocated = True
-            if remaining == 0:
-                break
-        if not allocated:
-            break
-
-    selected: list[dict] = []
-    for scenario, group in grouped.items():
-        quota = quotas[scenario]
-        # Spread the preview across the full generated split instead of taking
-        # a contiguous block from the start of the file.
-        selected.extend(group[index * len(group) // quota] for index in range(quota))
-    selected.sort(key=lambda item: str(item.get("sample_id") or ""))
-    return selected
 
 
 def load_catalog_views(
@@ -188,15 +113,11 @@ def picker_session(sample: dict[str, Any]) -> dict[str, Any]:
     """Return safe chooser metadata without the target or generated intent."""
 
     profile = sample.get("user_profile") if isinstance(sample.get("user_profile"), dict) else {}
-    scenario = str(sample.get("scenario_type") or "unknown")
     return {
         "sample_id": str(sample.get("sample_id") or ""),
-        "dataset_source": str(sample.get(SESSION_SOURCE_FIELD) or "custom"),
-        "scenario_type": scenario,
-        "difficulty_bucket": str(
-            sample.get("difficulty_bucket") or SCENARIO_DIFFICULTY.get(scenario, "unknown")
-        ),
-        "category_bucket": str(sample.get("category_bucket") or "clothing"),
+        "scenario_type": str(sample.get("scenario_type") or "unknown"),
+        "difficulty_bucket": str(sample.get("difficulty_bucket") or "unknown"),
+        "category_bucket": str(sample.get("category_bucket") or "unknown"),
         "user_profile": {
             "summary": str(profile.get("summary") or "No profile summary available."),
             "preference_tags": _list_text(profile.get("preference_tags")),
@@ -222,13 +143,6 @@ class SimulationService:
         candidate_name: str,
     ) -> None:
         self.agent = agent
-        sample_ids = [
-            str(sample["sample_id"])
-            for sample in samples
-            if sample.get("sample_id") not in (None, "")
-        ]
-        if len(sample_ids) != len(set(sample_ids)):
-            raise ValueError("frontend session datasets contain duplicate sample IDs")
         self.samples = {
             str(sample["sample_id"]): sample
             for sample in samples
@@ -245,17 +159,13 @@ class SimulationService:
         sessions = [picker_session(sample) for sample in self.samples.values()]
         sessions.sort(key=lambda item: item["sample_id"])
         counts: dict[str, int] = {}
-        source_counts: dict[str, int] = {}
         for item in sessions:
             scenario = item["scenario_type"]
             counts[scenario] = counts.get(scenario, 0) + 1
-            source = item["dataset_source"]
-            source_counts[source] = source_counts.get(source, 0) + 1
         return {
             "sessions": sessions,
             "total": len(sessions),
             "scenario_counts": counts,
-            "source_counts": source_counts,
             "candidate": self.candidate_name,
         }
 
@@ -285,10 +195,35 @@ class SimulationService:
             )
             view["rank"] = rank
             view["is_target"] = target_is_eligible and parent_asin == target
+            products = getattr(self.agent, "products", {})
+            product_intent = products.get(parent_asin) if isinstance(products, dict) else None
+            prior_field = getattr(self.agent, "prior_field", None)
+            prior_weight = getattr(product_intent, "prior_weight", None)
+            if isinstance(prior_weight, (int, float)) and math.isfinite(prior_weight):
+                if prior_field == "verified_reviews_365d":
+                    smoothing = float(getattr(self.agent, "prior_smoothing", 0.0) or 0.0)
+                    raw_count = max(0.0, float(prior_weight) - smoothing)
+                    view["ranking_signal"] = {
+                        "label": "Verified reviews · 365d",
+                        "value": int(raw_count) if raw_count.is_integer() else raw_count,
+                        "weight": float(prior_weight),
+                    }
+                elif prior_field == "rating_number":
+                    view["ranking_signal"] = {
+                        "label": "Catalog ratings",
+                        "value": int(max(0.0, float(prior_weight))),
+                        "weight": float(prior_weight),
+                    }
             result.append(view)
         return result
 
-    def _agent_trace(self) -> dict[str, Any]:
+    def _agent_trace(
+        self,
+        session_id: str,
+        recommendation_count: int,
+    ) -> dict[str, Any]:
+        """Return read-only decision state without evaluator-only target data."""
+
         rank_state = getattr(self.agent, "last_rank_state", {})
         policy = getattr(self.agent, "last_recommendation_policy", {})
         if not isinstance(rank_state, dict):
@@ -302,70 +237,127 @@ class SimulationService:
                 return value
             return None
 
-        return {
+        legacy_trace = {
             "intent": scalar(rank_state.get("intent")),
             "mode": scalar(rank_state.get("mode")),
             "policy": scalar(policy.get("policy")),
             "k": scalar(policy.get("k")),
         }
 
-    def _agent_algorithm_stats(self, session_id: str) -> dict[str, Any]:
-        """Read the optional target-free diagnostics exposed by an agent."""
+        sessions = getattr(self.agent, "sessions", None)
+        state = sessions.get(session_id) if isinstance(sessions, dict) else None
+        if state is None:
+            return legacy_trace
 
-        getter = getattr(self.agent, "debug_algorithm_stats", None)
-        if not callable(getter):
-            return {}
-        try:
-            raw = getter(session_id)
-        except (KeyError, RuntimeError, TypeError, ValueError):
-            return {}
-        if not isinstance(raw, dict):
-            return {}
+        def count(name: str) -> int:
+            value = getattr(state, name, ())
+            return len(value) if isinstance(value, (dict, list, set, tuple)) else 0
 
-        result: dict[str, Any] = {}
-        for key in (
-            "hypothesis_count",
-            "focus_count",
-            "recovery_count",
-            "evidence_count",
-            "rejected_count",
-            "dp_state_count",
-            "selected_k",
-        ):
-            value = raw.get(key)
-            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-                result[key] = value
-        for key in ("retrieval_mode", "policy_mode", "prior_mode"):
-            value = raw.get(key)
-            if isinstance(value, str) and value:
-                result[key] = value
-        if isinstance(raw.get("nlp_fallback"), bool):
-            result["nlp_fallback"] = raw["nlp_fallback"]
-        return result
+        nlp_fallback = bool(getattr(state, "nlp_fallback", False))
+        focus_count = count("focus_candidates")
+        trusted_count = count("trusted_universe")
+        active_count = focus_count if focus_count else count("current_candidates")
+        if nlp_fallback and not active_count:
+            active_count = trusted_count
 
-    def _calculation_stats(
-        self,
-        *,
-        elapsed_ms: float,
-        recommendation_count: int,
-        new_product_count: int,
-        seen_product_count: int,
-        turn: int,
-        algorithm_stats: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Collect exact target-free statistics for the thinking card."""
+        debug: dict[str, Any] = {}
+        debug_state = getattr(self.agent, "debug_state", None)
+        if callable(debug_state):
+            try:
+                candidate_debug = debug_state(session_id)
+                if isinstance(candidate_debug, dict):
+                    debug = candidate_debug
+            except Exception:
+                # Observability must never alter or break the evaluator-style run.
+                debug = {}
 
-        result = {
-            "catalog_products": len(self.catalog_ids),
-            "shortlist_size": recommendation_count,
-            "new_products": new_product_count,
-            "products_shown": seen_product_count,
-            "elapsed_ms": round(max(0.0, elapsed_ms), 2),
-            "turn": turn,
+        evidence: list[dict[str, str]] = []
+        for clue in debug.get("current_intent", []):
+            if not isinstance(clue, dict) or not clue.get("active", True):
+                continue
+            clue_text = str(clue.get("text") or "").strip()
+            if not clue_text:
+                continue
+            evidence.append(
+                {
+                    "text": clue_text,
+                    "slot": str(clue.get("slot") or "feature"),
+                    "kind": "active",
+                }
+            )
+        for clue in debug.get("negative_evidence", []):
+            if not isinstance(clue, dict):
+                continue
+            clue_text = str(clue.get("text") or "").strip()
+            if clue_text:
+                evidence.append(
+                    {
+                        "text": clue_text,
+                        "slot": str(clue.get("slot") or "feature"),
+                        "kind": "negative",
+                    }
+                )
+
+        scenario = scalar(getattr(state, "scenario", None))
+        override_applied = bool(getattr(state, "override_applied", True))
+        pre_override = scenario == "intent_override" and not override_applied
+        prior_field = str(getattr(self.agent, "prior_field", "uniform"))
+        prior_labels = {
+            "verified_reviews_365d": "verified reviews (365d) + 1",
+            "rating_number": "catalog rating count",
+            "uniform": "uniform belief",
         }
-        result.update(algorithm_stats)
-        result.setdefault("selected_k", recommendation_count)
-        return result
+        uses_dp = not pre_override and (not nlp_fallback or focus_count > 0)
+        if pre_override:
+            decision_policy = "pre-override guard"
+        elif uses_dp:
+            decision_policy = "finite-horizon DP"
+        else:
+            decision_policy = "conservative recovery"
+
+        if pre_override:
+            explanation = (
+                "Recommendations are not scoreable until the scheduled intent "
+                "override appears, so the pre-override guard returned K=1."
+            )
+        elif not nlp_fallback:
+            hypothesis_label = "hypothesis" if active_count == 1 else "hypotheses"
+            explanation = (
+                f"Exact protocol inversion retained {active_count:,} product "
+                f"{hypothesis_label}. The prior ordered the pool; finite-horizon DP "
+                f"returned K={recommendation_count}."
+            )
+        elif focus_count:
+            explanation = (
+                f"NLP recovery kept {trusted_count:,} products recoverable and "
+                f"promoted {focus_count:,} grounded matches. Finite-horizon DP "
+                f"returned K={recommendation_count} from that focus tier."
+            )
+        else:
+            explanation = (
+                f"No safe focus match was found, so {trusted_count:,} products "
+                f"remained recoverable and the conservative policy returned "
+                f"K={recommendation_count}."
+            )
+
+        return {
+            **legacy_trace,
+            "route": "nlp-recovery" if nlp_fallback else "exact-inverse",
+            "scenario": scenario,
+            "policy": decision_policy,
+            "k": recommendation_count,
+            "requested_k": TOP_K,
+            "initial_candidates": count("initial_candidates"),
+            "active_candidates": active_count,
+            "focus_candidates": focus_count,
+            "trusted_candidates": trusted_count,
+            "rejected_candidates": count("rejected"),
+            "prior": prior_labels.get(prior_field, prior_field),
+            "override_seen": bool(getattr(state, "override_seen", False)),
+            "override_applied": override_applied,
+            "evidence": evidence[:4],
+            "explanation": explanation,
+        }
 
     def simulate(self, sample_id: str) -> dict[str, Any]:
         sample = self.samples.get(sample_id)
@@ -404,20 +396,24 @@ class SimulationService:
 
         for turn in range(1, MAX_TURNS + 1):
             warning: str | None = None
-            response_started = time.perf_counter()
             try:
                 response = self.agent.respond(agent_session_id, user_message, turn, TOP_K)
             except Exception:  # Keep the viewer alive like the evaluator.
                 traceback.print_exc()
                 response = {"message": "", "ask_attribute": None, "recommendations": []}
                 warning = "The agent raised an exception on this turn. See the server log for details."
-            response_elapsed_ms = (time.perf_counter() - response_started) * 1_000
             if not isinstance(response, dict) or not isinstance(response.get("message"), str):
                 response = {"message": "", "ask_attribute": None, "recommendations": []}
                 warning = warning or "Agent returned an invalid response."
 
             ranked_ids = normalize_recommendations(response.get("recommendations"), self.catalog_ids)
-            new_product_count = len(set(ranked_ids) - unique_products)
+            # Capture target-free Agent state before the evaluator compares the
+            # returned IDs with its hidden ground truth.
+            agent_trace = (
+                self._agent_trace(agent_session_id, len(ranked_ids))
+                if warning is None
+                else {}
+            )
             unique_products.update(ranked_ids)
             eligible_hit = override_applied and target in ranked_ids
             if eligible_hit:
@@ -428,12 +424,6 @@ class SimulationService:
             if not isinstance(ask_attribute, str):
                 ask_attribute = None
             assistant_message = str(response.get("message") or "")
-            trace = self._agent_trace() if warning is None else {}
-            algorithm_stats = (
-                self._agent_algorithm_stats(agent_session_id)
-                if warning is None
-                else {}
-            )
             transcript.append(
                 {
                     "turn": turn,
@@ -446,15 +436,7 @@ class SimulationService:
                             target=target,
                             target_is_eligible=override_applied,
                         ),
-                        "trace": trace,
-                        "calculation": self._calculation_stats(
-                            elapsed_ms=response_elapsed_ms,
-                            recommendation_count=len(ranked_ids),
-                            new_product_count=new_product_count,
-                            seen_product_count=len(unique_products),
-                            turn=turn,
-                            algorithm_stats=algorithm_stats,
-                        ),
+                        "trace": agent_trace,
                         "warning": warning,
                     },
                     "hit": eligible_hit,
@@ -622,13 +604,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument("--catalog", default=str(DEFAULT_CATALOG))
     parser.add_argument("--dataset", default=str(DEFAULT_DATASET))
-    parser.add_argument("--generated-dataset", default=str(DEFAULT_GENERATED_DATASET))
-    parser.add_argument(
-        "--generated-limit",
-        type=int,
-        default=DEFAULT_GENERATED_SESSION_LIMIT,
-        help="number of deterministic generated-dev sessions to add (0 disables them)",
-    )
     parser.add_argument("--entrypoint", default=str(DEFAULT_ENTRYPOINT))
     return parser.parse_args()
 
@@ -637,7 +612,6 @@ def main() -> None:
     args = parse_args()
     catalog_path = Path(args.catalog).resolve()
     dataset_path = Path(args.dataset).resolve()
-    generated_dataset_path = Path(args.generated_dataset).resolve()
     entrypoint_path = Path(args.entrypoint).resolve()
 
     if not catalog_path.is_file():
@@ -646,30 +620,9 @@ def main() -> None:
         )
     if not dataset_path.is_file():
         raise SystemExit(f"Session dataset not found at {dataset_path}.")
-    if args.generated_limit < 0:
-        raise SystemExit("--generated-limit cannot be negative.")
 
     print(f"Loading sessions from {dataset_path} …", flush=True)
-    primary_source = "public" if dataset_path == DEFAULT_DATASET.resolve() else "custom"
-    samples = label_sessions(load_jsonl(dataset_path), primary_source)
-    if args.generated_limit and generated_dataset_path != dataset_path:
-        if generated_dataset_path.is_file():
-            generated_samples = select_generated_sessions(
-                load_jsonl(generated_dataset_path),
-                args.generated_limit,
-            )
-            samples.extend(label_sessions(generated_samples, "generated_dev"))
-            print(
-                f"Added {len(generated_samples)} generated-dev preview sessions from "
-                f"{generated_dataset_path}.",
-                flush=True,
-            )
-        else:
-            print(
-                f"Generated-dev dataset not found at {generated_dataset_path}; "
-                "continuing without preview sessions. Run `make unseen-data` to create it.",
-                flush=True,
-            )
+    samples = load_jsonl(dataset_path)
     target_ids = {str(sample["ground_truth"]["parent_asin"]) for sample in samples}
     print(f"Loading {catalog_path.name} for product cards …", flush=True)
     catalog_ids, target_categories, target_products, product_views = load_catalog_views(

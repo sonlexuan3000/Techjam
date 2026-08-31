@@ -20,7 +20,6 @@ const dom = {
   connectionState: document.querySelector("#connection-state"),
   candidateName: document.querySelector("#candidate-name"),
   search: document.querySelector("#session-search"),
-  sourceFilter: document.querySelector("#source-filter"),
   scenarioFilter: document.querySelector("#scenario-filter"),
   difficultyFilter: document.querySelector("#difficulty-filter"),
   randomSession: document.querySelector("#random-session"),
@@ -83,19 +82,6 @@ function scenarioAbbreviation(value) {
     boundary: "BD",
   };
   return labels[value] || "SE";
-}
-
-function sourceLabel(value) {
-  const labels = {
-    public: "Public 200",
-    generated_dev: "Generated dev",
-    custom: "Custom dataset",
-  };
-  return labels[value] || "Dataset";
-}
-
-function sourceClass(value) {
-  return String(value || "custom").replaceAll("_", "-");
 }
 
 function initialsForProfile(session) {
@@ -191,15 +177,14 @@ function renderSessionList() {
     option.tabIndex = selected || (!selectedIsVisible && index === 0) ? 0 : -1;
     option.setAttribute(
       "aria-label",
-      `${session.sample_id}, ${sourceLabel(session.dataset_source)}, ${scenarioLabel(session.scenario_type)}, ${session.difficulty_bucket} difficulty`,
+      `${session.sample_id}, ${scenarioLabel(session.scenario_type)}, ${session.difficulty_bucket} difficulty`,
     );
 
     option.append(createElement("span", "session-icon", scenarioAbbreviation(session.scenario_type)));
     const copy = createElement("span", "session-copy");
     copy.append(createElement("strong", "", session.sample_id));
     const tags = session.user_profile.preference_tags.slice(0, 3).join(" · ");
-    const detail = tags || scenarioLabel(session.scenario_type);
-    copy.append(createElement("span", "", `${sourceLabel(session.dataset_source)} · ${detail}`));
+    copy.append(createElement("span", "", tags || scenarioLabel(session.scenario_type)));
     option.append(copy);
     const difficulty = createElement("span", `difficulty-mark ${session.difficulty_bucket}`);
     difficulty.setAttribute("aria-hidden", "true");
@@ -232,18 +217,14 @@ function navigateSessionList(event, currentIndex) {
 
 function filterSessions() {
   const query = dom.search.value.trim().toLowerCase();
-  const source = dom.sourceFilter.value;
   const scenario = dom.scenarioFilter.value;
   const difficulty = dom.difficultyFilter.value;
   state.filteredSessions = state.sessions.filter((session) => {
-    if (source !== "all" && session.dataset_source !== source) return false;
     if (scenario !== "all" && session.scenario_type !== scenario) return false;
     if (difficulty !== "all" && session.difficulty_bucket !== difficulty) return false;
     if (!query) return true;
     const haystack = [
       session.sample_id,
-      session.dataset_source,
-      sourceLabel(session.dataset_source),
       session.scenario_type,
       session.difficulty_bucket,
       session.user_profile.summary,
@@ -269,10 +250,6 @@ function renderSelectedSession() {
   if (!session) return;
   dom.selectedTitle.textContent = session.sample_id;
   dom.selectedBadges.replaceChildren(
-    makeBadge(
-      sourceLabel(session.dataset_source),
-      `dataset-source ${sourceClass(session.dataset_source)}`,
-    ),
     makeBadge(scenarioLabel(session.scenario_type), scenarioClass(session.scenario_type)),
     makeBadge(session.difficulty_bucket, "difficulty"),
   );
@@ -400,160 +377,41 @@ function userTypingMessage(turn) {
   return row;
 }
 
-function compactStatNumber(value) {
-  if (value === null || value === undefined || value === "") return "—";
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "—";
-  return new Intl.NumberFormat("en-US", {
-    notation: number >= 1000 ? "compact" : "standard",
-    maximumFractionDigits: 1,
-  }).format(number);
-}
-
-function elapsedStat(value) {
-  if (value === null || value === undefined || value === "") return "—";
-  const milliseconds = Number(value);
-  if (!Number.isFinite(milliseconds)) return "—";
-  if (milliseconds < 1) return "<1 ms";
-  if (milliseconds < 1000) return `${Math.round(milliseconds)} ms`;
-  return `${(milliseconds / 1000).toFixed(1)} s`;
-}
-
-function calculationStat(value, label, index, description) {
-  const stat = createElement("span", "thinking-stat");
-  stat.style.setProperty("--stat-delay", `${index * 65}ms`);
-  stat.title = description;
-  stat.append(createElement("strong", "", value), createElement("span", "", label));
-  return stat;
-}
-
-function algorithmLabel(value) {
-  const labels = {
-    exact_protocol: "Exact hypothesis filter",
-    focus_tier: "Reversible focus tier",
-    recovery_tier: "Trusted recovery tier",
-    lexical_fallback: "Lexical recovery",
-    finite_horizon_dp: "Finite-horizon DP",
-    recovery_schedule: "Recovery schedule",
-    override_guard: "Override guard",
-    no_candidates: "No candidates",
-    verified_reviews_365d: "Review-weighted prior",
-    rating_number: "Rating prior",
-    uniform: "Uniform prior",
-  };
-  return labels[value] || scenarioLabel(value);
-}
-
-function algorithmSummary(calculation) {
-  const parts = [
-    calculation.retrieval_mode,
-    calculation.policy_mode,
-    calculation.prior_mode,
-  ]
-    .filter(Boolean)
-    .map(algorithmLabel);
-  if (Number.isInteger(calculation.evidence_count)) {
-    parts.push(`${calculation.evidence_count} evidence turn${calculation.evidence_count === 1 ? "" : "s"}`);
-  }
-  return parts.join(" · ") || "Ranking and planning the next recommendation cutoff…";
-}
-
-function algorithmStatCells(calculation, turn) {
-  const selectedK = calculation.selected_k ?? calculation.shortlist_size ?? turn.assistant.recommendations.length;
-  return [
-    [
-      compactStatNumber(calculation.hypothesis_count),
-      "Hypotheses",
-      "Products still plausible after applying the conversation evidence.",
-    ],
-    [
-      compactStatNumber(calculation.dp_state_count),
-      "DP states",
-      "Memoized decision states evaluated by the finite-horizon planner.",
-    ],
-    [
-      compactStatNumber(selectedK),
-      "Selected K",
-      "Number of top-ranked products chosen for this turn.",
-    ],
-    [
-      elapsedStat(calculation.elapsed_ms),
-      "Runtime",
-      "Time spent computing the agent response for this turn.",
-    ],
-  ];
-}
-
 function typingMessage(turn) {
-  const calculation = turn.assistant.calculation || {};
-  const statCells = algorithmStatCells(calculation, turn);
   const row = createElement("article", "message-row assistant typing-row");
   row.dataset.typing = "true";
   const avatar = createElement("div", "message-avatar");
   avatar.innerHTML = agentAvatarSvg;
   row.append(avatar);
   const stack = createElement("div", "message-stack");
-  stack.append(createElement("div", "message-meta", "Shopping agent · Calculating"));
+  stack.append(createElement("div", "message-meta", "Shopping agent · Thinking"));
   const bubble = createElement("div", "typing-bubble");
   bubble.setAttribute("role", "status");
-  bubble.setAttribute(
-    "aria-label",
-    `The shopping agent is calculating turn ${turn.turn}: ${statCells[0][0]} hypotheses, ${statCells[1][0]} dynamic-programming states, selected K ${statCells[2][0]}, ${statCells[3][0]} runtime.`,
-  );
+  bubble.setAttribute("aria-label", "The shopping agent is thinking");
 
-  const header = createElement("div", "thinking-head");
   const spinner = createElement("span", "thinking-spinner");
   spinner.setAttribute("aria-hidden", "true");
   const copy = createElement("span", "thinking-copy");
-  copy.append(createElement("strong", "", "Calculating recommendations"));
-  copy.append(createElement("span", "", algorithmSummary(calculation)));
+  copy.append(createElement("strong", "", "Agent is thinking"));
+  const isOverride = turn.user.message.toLowerCase().includes("actually");
+  copy.append(
+    createElement(
+      "span",
+      "",
+      isOverride
+        ? "Updating the intent and ranking again…"
+        : turn.turn === 1
+          ? "Reading the request and searching 50,000 products…"
+          : "Applying the new details and reranking matches…",
+    ),
+  );
   const dots = createElement("span", "thinking-dots");
   dots.setAttribute("aria-hidden", "true");
   dots.append(createElement("i"), createElement("i"), createElement("i"));
-  header.append(spinner, copy, dots);
-
-  const stats = createElement("div", "thinking-stats");
-  stats.setAttribute("aria-hidden", "true");
-  statCells.forEach(([value, label, description], index) => {
-    stats.append(calculationStat(value, label, index, description));
-  });
-
-  bubble.append(header, stats);
+  bubble.append(spinner, copy, dots);
   stack.append(bubble);
   row.append(stack);
   return row;
-}
-
-function completeCalculationMessage(row, turn) {
-  const calculation = turn.assistant.calculation || {};
-  const statCells = algorithmStatCells(calculation, turn);
-  row.classList.add("calculation-complete");
-  row.dataset.typing = "false";
-
-  const meta = row.querySelector(".message-meta");
-  if (meta) meta.textContent = `Shopping agent · Turn ${turn.turn} calculation`;
-
-  const bubble = row.querySelector(".typing-bubble");
-  if (bubble) {
-    bubble.setAttribute("role", "note");
-    bubble.setAttribute(
-      "aria-label",
-      `Turn ${turn.turn} calculation complete: ${statCells[0][0]} hypotheses, ${statCells[1][0]} dynamic-programming states, selected K ${statCells[2][0]}, ${statCells[3][0]} runtime.`,
-    );
-  }
-
-  const spinner = row.querySelector(".thinking-spinner");
-  if (spinner) {
-    spinner.className = "thinking-check";
-    spinner.textContent = "✓";
-  }
-  const title = row.querySelector(".thinking-copy strong");
-  if (title) title.textContent = "Calculation complete";
-  const detail = row.querySelector(".thinking-copy > span");
-  if (detail) {
-    detail.textContent = algorithmSummary(calculation);
-  }
-  row.querySelector(".thinking-dots")?.remove();
 }
 
 function productGlyph(product) {
@@ -591,6 +449,19 @@ function formatRating(product) {
   return `★ ${rating.toFixed(1)}${countText}`;
 }
 
+function formatCompactNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value ?? "—");
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(
+    number,
+  );
+}
+
+function hypothesisCount(value) {
+  const number = Number(value);
+  return `${formatCompactNumber(value)} ${number === 1 ? "hypothesis" : "hypotheses"}`;
+}
+
 function productCard(product) {
   const card = createElement("article", `product-card${product.is_target ? " is-target" : ""}`);
   const art = createElement("div", "product-art");
@@ -602,6 +473,15 @@ function productCard(product) {
   const copy = createElement("div", "product-copy");
   copy.append(createElement("span", "product-store", product.store || product.category || "Product"));
   copy.append(createElement("p", "product-title", product.title));
+  if (product.ranking_signal) {
+    const signal = createElement("div", "product-signal");
+    signal.append(
+      createElement("span", "", product.ranking_signal.label),
+      createElement("strong", "", formatCompactNumber(product.ranking_signal.value)),
+    );
+    signal.title = `Belief weight used by ranking: ${product.ranking_signal.weight}`;
+    copy.append(signal);
+  }
   const meta = createElement("div", "product-meta");
   meta.append(createElement("span", "product-price", formatPrice(product.price)));
   const rating = createElement("span", "rating");
@@ -619,6 +499,51 @@ function productCard(product) {
 }
 
 function traceRow(trace) {
+  if (trace?.route) {
+    const panel = createElement("section", "decision-trace");
+    panel.setAttribute("aria-label", "Agent decision trace");
+
+    const heading = createElement("div", "decision-trace-heading");
+    heading.append(
+      createElement("span", "decision-trace-title", "Agent decision trace"),
+      createElement("span", `route-chip ${trace.route}`, scenarioLabel(trace.route)),
+    );
+    panel.append(heading);
+
+    const row = createElement("div", "trace-row");
+    const candidateLabel = trace.route === "nlp-recovery" && trace.focus_candidates
+      ? `${formatCompactNumber(trace.focus_candidates)} focus matches`
+      : hypothesisCount(trace.active_candidates);
+    const values = [
+      candidateLabel,
+      `${trace.policy || "policy"} · K=${trace.k ?? 0}`,
+      trace.prior ? `prior: ${trace.prior}` : null,
+      trace.rejected_candidates ? `${formatCompactNumber(trace.rejected_candidates)} rejected` : null,
+      trace.override_seen ? "override applied" : null,
+    ].filter(Boolean);
+    values.forEach((value) => row.append(createElement("span", "trace-chip", value)));
+    panel.append(row);
+
+    if (trace.explanation) {
+      panel.append(createElement("p", "decision-explanation", trace.explanation));
+    }
+    if (Array.isArray(trace.evidence) && trace.evidence.length) {
+      const evidence = createElement("div", "evidence-row");
+      evidence.append(createElement("span", "evidence-label", "Grounded evidence"));
+      trace.evidence.forEach((item) => {
+        const chip = createElement(
+          "span",
+          `evidence-chip${item.kind === "negative" ? " negative" : ""}`,
+          item.text,
+        );
+        chip.title = `${item.slot || "feature"} · ${item.kind || "active"}`;
+        evidence.append(chip);
+      });
+      panel.append(evidence);
+    }
+    return panel;
+  }
+
   const values = [];
   if (trace?.intent) values.push(trace.intent);
   if (trace?.mode) values.push(`mode:${trace.mode}`);
@@ -687,7 +612,7 @@ function assistantMessage(turn) {
   return row;
 }
 
-function outcomeCard(outcome) {
+function outcomeCard(outcome, trace = null) {
   const card = createElement("section", `outcome-card${outcome.hit ? "" : " miss"}`);
   const icon = createElement("div", "outcome-icon");
   icon.innerHTML = outcome.hit
@@ -707,6 +632,22 @@ function outcomeCard(outcome) {
       outcome.hit
         ? `${outcome.target.parent_asin} matched at rank ${outcome.best_rank}.`
         : `${outcome.target.parent_asin} was not present in a scored list by turn 10.`,
+    ),
+  );
+  if (trace?.route) {
+    copy.append(
+      createElement(
+        "p",
+        "decision-note",
+        `Agent decision: ${scenarioLabel(trace.route)} · ${hypothesisCount(trace.active_candidates)} · ${trace.policy} K=${trace.k}.`,
+      ),
+    );
+  }
+  copy.append(
+    createElement(
+      "p",
+      "verdict-note",
+      "Evaluator verdict added after the Agent response; the hidden target was never sent to the Agent.",
     ),
   );
   card.append(copy);
@@ -785,17 +726,15 @@ async function revealNextTurn() {
   scrollToLatest();
 
   if (!(await wait(readingPause(), generation))) return;
-  const calculationCard = typingMessage(turn);
-  dom.transcript.append(calculationCard);
+  const typing = typingMessage(turn);
+  dom.transcript.append(typing);
   scrollToLatest();
 
   const thinkingPause = reducedMotion
-    ? 700
-    : Math.max(1000, Math.min(2100, Math.round(playbackDelay() * 1.25)));
+    ? 450
+    : Math.max(620, Math.min(1400, Math.round(playbackDelay() * 0.92)));
   if (!(await wait(thinkingPause, generation))) return;
-  completeCalculationMessage(calculationCard, turn);
-  scrollToLatest();
-
+  typing.remove();
   if (!(await wait(replyPause(), generation))) return;
   dom.transcript.append(assistantMessage(turn));
   state.cursor += 1;
@@ -816,7 +755,8 @@ function finalizePlayback() {
   state.complete = true;
   state.playing = false;
   state.animating = false;
-  dom.transcript.append(outcomeCard(state.result.outcome));
+  const finalTrace = state.result.transcript[state.result.transcript.length - 1]?.assistant?.trace;
+  dom.transcript.append(outcomeCard(state.result.outcome, finalTrace));
   updateProgress(
     state.result.outcome.turns,
     true,
@@ -920,17 +860,12 @@ function transcriptText() {
   if (!state.result) return "";
   const lines = [
     `Session: ${state.result.session.sample_id}`,
-    `Dataset: ${sourceLabel(state.result.session.dataset_source)}`,
     `Scenario: ${scenarioLabel(state.result.session.scenario_type)}`,
     `Candidate: ${state.result.candidate}`,
     "",
   ];
   state.result.transcript.forEach((turn) => {
     lines.push(`Turn ${turn.turn} — Customer: ${turn.user.message}`);
-    const calculation = turn.assistant.calculation || {};
-    lines.push(
-      `Turn ${turn.turn} — Algorithm: ${compactStatNumber(calculation.hypothesis_count)} hypotheses · ${compactStatNumber(calculation.dp_state_count)} DP states · selected K ${compactStatNumber(calculation.selected_k ?? calculation.shortlist_size)} · ${elapsedStat(calculation.elapsed_ms)} runtime · ${algorithmSummary(calculation)}`,
-    );
     lines.push(`Turn ${turn.turn} — Agent: ${turn.assistant.message || "(no message)"}`);
     if (turn.assistant.ask_attribute) lines.push(`Asked attribute: ${turn.assistant.ask_attribute}`);
     if (turn.assistant.recommendations.length) {
@@ -938,6 +873,11 @@ function transcriptText() {
         `Recommendations: ${turn.assistant.recommendations
           .map((product) => `${product.rank}. ${product.title} (${product.parent_asin})`)
           .join(" | ")}`,
+      );
+    }
+    if (turn.assistant.trace?.route) {
+      lines.push(
+        `Decision trace: ${turn.assistant.trace.route}; ${turn.assistant.trace.active_candidates} active hypotheses; ${turn.assistant.trace.policy}; K=${turn.assistant.trace.k}.`,
       );
     }
     lines.push("");
@@ -950,6 +890,15 @@ function transcriptText() {
   );
   lines.push(`Target: ${outcome.target.title} (${outcome.target.parent_asin})`);
   return lines.join("\n");
+}
+
+function sessionIdFromHash() {
+  const raw = window.location.hash.replace(/^#/, "");
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return "";
+  }
 }
 
 async function copyTranscript() {
@@ -973,7 +922,6 @@ async function copyTranscript() {
 
 function bindEvents() {
   dom.search.addEventListener("input", filterSessions);
-  dom.sourceFilter.addEventListener("change", filterSessions);
   dom.scenarioFilter.addEventListener("change", filterSessions);
   dom.difficultyFilter.addEventListener("change", filterSessions);
   dom.randomSession.addEventListener("click", pickRandomSession);
@@ -1006,7 +954,7 @@ async function initialize() {
     dom.connectionState.className = "connection-state online";
     dom.connectionState.lastChild.textContent = " Online";
     renderSessionList();
-    const hashId = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+    const hashId = sessionIdFromHash();
     const initial = state.sessions.find((session) => session.sample_id === hashId) || state.sessions[0];
     if (initial) selectSession(initial);
   } catch (error) {

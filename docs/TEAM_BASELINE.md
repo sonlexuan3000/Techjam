@@ -31,11 +31,12 @@ The inverse-DP algorithm was selected on generated development. After external
 data was confirmed permitted, the final prior was selected on the labeled
 public development set. It improves public Technical Score by `0.019850` over
 uniform but regresses `0.003854` on the roughly uniform generated holdout. The
-holdout seed is public and neither result is organizer-private evaluation.
+holdout seed is public and neither result is final evaluation.
 
 ## Robustness and scope
 
-- 66 shared/core/contract tests pass.
+- 75 tests pass: 54 shared state/parser/contract/frontend tests plus 21 selected
+  inverse-DP core tests.
 - Exact catalog-value wrapper stress produced `0/2,000` differing scored-session
   summaries (hit, first-hit turn, and rank).
 - An exhaustive audit found `0/50,000` card/category mismatches against the

@@ -139,7 +139,7 @@ overlap:
 
 The review prior is `+0.001026` over uniform on generated development but
 `-0.003854` on the roughly uniformly sampled generated holdout. These are
-public/development results, not a private-set estimate. The full methodology
+public/development results, not a final-evaluation estimate. The full methodology
 and limitations are recorded in `REPORT.md`.
 
 ## Runtime profile
@@ -174,9 +174,14 @@ submission/
 - The policy assumes the released card construction, disclosure order, scenario
   model, score function, review-popularity prior, and ten-turn horizon.
 - The public development set was used to select the prior, and the generated
-  holdout moved in the opposite direction. Neither predicts the private score.
+  holdout moved in the opposite direction. Neither predicts the final score.
 - General semantic-value paraphrases remain weak. Recovery prevents an
   uncertain parse from redefining eligibility but cannot guarantee early rank.
 - `user_profile` is stored per session but is not used by the ranking policy.
 - One Agent instance supports multiple sequential sessions; concurrent calls
   require an external lock.
+
+The organizer states that the 800-session final uses the released deterministic
+templates and response policy. It is released only after the deadline and must
+be run with the unmodified evaluator against the frozen submitted commit; see
+`docs/final_evaluation_faq.md` in the full repository.

@@ -25,7 +25,10 @@ The inverse-DP algorithm was selected on generated development. After the team
 confirmed with judges that external data was permitted, the final review prior
 was selected on the organizer-labeled public development set. Its public gain
 and generated-holdout regression are both reported in `EVALUATION.md`; no
-organizer-private session or label was available or used.
+unreleased final-evaluation session or label was available or used. The
+organizer's current [Final Evaluation FAQ](final_evaluation_faq.md) permits
+disclosed, legally accessible Amazon Reviews 2023 preprocessing and local
+sidecar artifacts.
 
 The minimal offline-runtime artifact is built with:
 

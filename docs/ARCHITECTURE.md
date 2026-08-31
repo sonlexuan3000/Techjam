@@ -49,6 +49,37 @@ flowchart TB
     end
 ```
 
+## Agent/evaluator data boundary
+
+```mermaid
+flowchart LR
+    E[Official evaluator] -->|reset: session_id + aggregate profile| A[Agent]
+    E -->|respond: current message + turn + Top-K| A
+    C[Visible catalog] --> A
+    P[ASIN-level review prior] --> A
+    A -->|message + ask_attribute + ranked ASINs| E
+    T[Hidden target + intent card + scenario behavior] --> E
+```
+
+The competition runtime opens Python modules, the participant-visible catalog,
+and `submission/data/review_prior.tsv`. It never opens `public_set.jsonl`, a
+generated session file, result file, intent card, or ground-truth mapping. The
+prior contains a count for every catalog ASIN and no `sample_id` or user field.
+
+The local frontend deliberately has two separate roles. It uses labeled session
+data to run the simulated customer and score the returned list, but invokes the
+Agent only through the published `reset` and `respond` calls. A target-free trace
+is captured immediately after `respond`; only then does the viewer compare the
+returned ASINs with ground truth and add its “Target found” overlay.
+
+A rank-one turn-one result is therefore possible without target access. An exact
+opening message can map to a very small set of product cards; the disclosed
+review prior orders those hypotheses, and the DP may expose only the first one.
+For example, public session `public_0001` has two exact initial hypotheses, and
+the target has the stronger review prior. The public-development first-hit
+distribution is 90 sessions on turn one, 71 on turn two, 20 on turn three, and
+19 on turn four.
+
 ## 1. Catalog-to-intent reconstruction
 
 The released evaluator deterministically converts product metadata into a small
@@ -113,10 +144,12 @@ already proven wrong by a scored recommendation remain excluded.
 
 ## 3. Protocol trust and reversible recovery
 
-Private evaluation may preserve the underlying values while changing the prose
-around them. Treating every parser output as a hard fact is unsafe: a wrong
-interpretation can leave a non-empty candidate pool that permanently excludes
-the target, so an empty-pool fallback would arrive too late.
+The organizer now states that final evaluation preserves the released
+deterministic message templates. The recovery layer still matters for malformed
+input, local stress tests, and any future deployment beyond that protocol:
+treating every parser output as a hard fact can leave a non-empty candidate pool
+that permanently excludes the target, so an empty-pool fallback would arrive too
+late.
 
 InverseCart separates **focus** from **eligibility**:
 
@@ -255,7 +288,8 @@ The effect is distribution-dependent. Generated development improved only
 fixtures sample eligible catalog products roughly uniformly, so they do not
 encode the popularity assumption that the prior represents. The final prior was
 selected on the labeled public development set after the team confirmed that
-external data was permitted. No organizer-private session or label was used.
+external data was permitted. No unreleased final-evaluation session or label was
+used.
 
 The review count influences exact/focus ordering and expected probability,
 never eligibility: it cannot override category or trusted constraints. On that
@@ -322,7 +356,6 @@ It is not claimed to be a generally optimal commercial shopping policy.
 Known failure modes include:
 
 - value-level semantic rewrites with no exact catalog phrase;
-- changed private intent-card construction or disclosure order;
 - a target distribution that differs materially from the review-popularity
   assumption;
 - useful personalization signals not represented in conversation evidence;
@@ -332,3 +365,7 @@ The key safety invariant is narrower and testable:
 
 > Uncertain NLP may change ranking focus, but it must not silently redefine the
 > trusted recovery universe.
+
+For the competition final, the organizer guarantees the released intent-card
+behavior, deterministic message templates, interface, stopping rule, and
+`ask_attribute` policy. See [Final Evaluation FAQ](final_evaluation_faq.md).

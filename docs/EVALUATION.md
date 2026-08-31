@@ -2,8 +2,8 @@
 
 This report separates algorithm selection, prior selection, generated holdout,
 language diagnostics, and the organizer-labeled public development result. None
-of these results is presented as an estimate of the organizer's private 800
-sessions.
+of these results is presented as an estimate of the 800 unreleased final-
+evaluation sessions.
 
 ## Metrics
 
@@ -80,6 +80,13 @@ Scenario breakdown for the final backend:
 | Intent Override | 30 | 1.0000 | 1.000000 | 3.6000 |
 | Boundary | 10 | 1.0000 | 1.000000 | 2.0000 |
 
+First-hit turns for the final backend are `90 / 71 / 20 / 19` across turns
+`1 / 2 / 3 / 4`. A turn-one hit is expected when the exact opening message
+leaves a small hypothesis pool and the review prior ranks the target first; it
+does not imply that ground truth was passed to the Agent. The Agent does not
+load the public session file, and the frontend captures its decision trace
+before comparing returned ASINs with evaluator ground truth.
+
 Reproduce the aggregate from the released evaluator and public set:
 
 ```bash
@@ -88,7 +95,7 @@ make integration-check
 ```
 
 This is the result used for final prior selection on the public development
-set, not the organizer-private score.
+set, not the final-evaluation score.
 
 ## Algorithm comparison on generated development
 
@@ -251,8 +258,9 @@ make unseen-data
 
 ## Verification surface
 
-The final repository has 66 passing unit/core/contract tests across Python 3.10
-and 3.11 in CI. Coverage includes:
+The final repository has 75 passing tests: 54 shared state/parser/contract/
+frontend tests plus 21 selected inverse-DP core tests. CI runs them across
+Python 3.10 and 3.11. Coverage includes:
 
 - focused evaluator intent-card/category parity regressions (the separate
   release audit exhaustively checked all 50,000 products);
@@ -279,7 +287,8 @@ python3 submission/smoke.py --catalog data/catalog.jsonl
   derived constraints. Within that eligible pool they sample targets roughly
   uniformly, so they are not a test of the review-popularity assumption.
 - The public 200 was used to select the final prior and cannot estimate
-  generalization to private products or changed simulator language.
+  generalization to the unreleased target distribution. The organizer states
+  that final messages retain the released deterministic templates.
 - The 800-session holdout has a public seed and is not a hidden set.
 - The source review aggregate was computed over the full disclosed source file
   before the stated cutoff. It may include events from periods the organizer

@@ -15,7 +15,14 @@ or network connection is required.
 
 | Runtime | Catalog | Model tokens | External APIs | Tests |
 |---|---:|---:|---:|---:|
-| Python 3.10+ | 50,000 products | 0 | 0 | 66 passing |
+| Python 3.10+ | 50,000 products | 0 | 0 | 75 passing |
+
+> **Agent data boundary.** The submitted runtime never loads a session dataset,
+> target, intent card, behavior flag, or evaluation result. It receives only
+> `reset(session_id, user_profile)` and
+> `respond(session_id, user_message, turn, top_k)`. Product hypotheses are
+> derived from participant-visible catalog metadata and the published simulator
+> policy; the bundled prior is only `parent_asin -> verified_reviews_365d`.
 
 ## Results at a glance
 
@@ -43,8 +50,8 @@ roughly uniformly, whereas the review prior assumes that product popularity is
 informative; the opposing result is therefore an important distribution
 diagnostic, not hidden-test evidence.
 
-These results are development evidence, not a prediction of organizer-private
-performance. See [Evaluation](docs/EVALUATION.md) for the complete A/B,
+These results are development evidence, not a prediction of unreleased final-
+evaluation performance. See [Evaluation](docs/EVALUATION.md) for the complete A/B,
 scenario results, dataset construction, and caveats.
 
 `TechnicalScore` is the released objective composite used as an input to
@@ -53,7 +60,7 @@ the final hackathon score.
 
 ## What makes the approach different
 
-### 1. Model-based product hypothesis inference
+### 1. Protocol inversion: product-as-hypothesis retrieval
 
 From the published interaction protocol, InverseCart derives a compact intent
 representation for every product. A product remains a candidate when its card
@@ -173,15 +180,32 @@ Reproduce the disclosed organizer public development result with:
 make integration-check
 ```
 
-To choose a public or generated-development session and watch the
-agent/customer exchange as an animated chat, run:
+The organizer's current final-evaluation policy releases 800 additional
+sessions after the Devpost deadline. Teams must run the unmodified evaluator
+from the repository commit frozen at submission time and retain `results.json`,
+the commit SHA, and environment details. The final templates and response policy
+match the released deterministic evaluator; there are no undisclosed
+paraphrases. See [Final Evaluation FAQ](docs/final_evaluation_faq.md).
+
+To choose a public session and watch the agent/customer exchange as an animated
+chat, run:
 
 ```bash
 make frontend
 ```
 
 Then open `http://localhost:8787`. The viewer uses the same customer simulator
-and stopping rules as the local evaluator; see [frontend/README.md](frontend/README.md).
+and stopping rules as the local evaluator. It now shows the Agent's inferred
+route, candidate counts, grounded evidence, popularity prior, and selected K.
+The hidden target is compared only after `Agent.respond` returns, so target
+badges and hit metrics are evaluator-side overlays rather than Agent inputs.
+See [frontend/README.md](frontend/README.md).
+
+The default `public_0001` legitimately hits at rank one on turn one and is kept
+visible: its exact opening message leaves only a tiny hypothesis pool, then the
+review prior orders that pool. Across all 200 public-development sessions, 90
+score on turn one, 71 on turn two, 20 on turn three, and 19 on turn four. For a
+recorded multi-turn walkthrough, use `public_0120` instead.
 
 ## Deterministic demo trace
 
@@ -316,19 +340,25 @@ evaluator/                          deterministic released evaluator
 scripts/                            setup, generation, benchmarks, demo, packaging
 tests/                              state, parser, contract, and integration tests
 experiments/                        preserved algorithm ablations
+frontend/                           optional local evaluator/conversation viewer
 docs/ARCHITECTURE.md                algorithm and state-machine deep dive
 docs/EVALUATION.md                  metrics, protocol, ablations, and caveats
 docs/DEVPOST_SUBMISSION.md          ready-to-paste project narrative
+docs/TEAM_HANDOFF_EN.md             English slide/video/document handoff
+docs/TEAM_HANDOFF_VI.md             Vietnamese slide/video/document handoff
+docs/final_evaluation_faq.md        current organizer final-evaluation policy
+docs/FINAL_SUBMISSION_CHECKLIST.md  code-freeze and Devpost release checklist
 ```
 
 ## Limitations
 
-- The score gain depends on the released intent-card construction, disclosure
-  order, scenario behavior, metric, review-prior assumption, and ten-turn
-  horizon. Changed private mechanics or target distribution may reduce it.
+- The organizer states that final evaluation preserves the released evaluator
+  behavior and deterministic message templates. The remaining generalization
+  risk is the unreleased target distribution, especially whether it matches the
+  review-popularity prior.
 - The public 200 was used to select the final prior after external data was
   confirmed permitted. It is labeled development data, not an unbiased estimate
-  of the private score.
+  of final-evaluation performance.
 - The prior aggregates the full disclosed source before its fixed cutoff and
   may include periods later treated as held out. It contains no private/session
   labels, but is not claimed to be temporally leakage-free.
@@ -347,17 +377,19 @@ docs/DEVPOST_SUBMISSION.md          ready-to-paste project narrative
 - [Technical architecture](docs/ARCHITECTURE.md)
 - [Evaluation report](docs/EVALUATION.md)
 - [Devpost copy](docs/DEVPOST_SUBMISSION.md)
+- [English team handoff](docs/TEAM_HANDOFF_EN.md)
+- [Vietnamese team handoff](docs/TEAM_HANDOFF_VI.md)
+- [Video technical notes](docs/VIDEO_TECHNICAL_NOTES.md)
+- [Final Evaluation FAQ](docs/final_evaluation_faq.md)
+- [Final submission checklist](docs/FINAL_SUBMISSION_CHECKLIST.md)
 - [Data attribution](DATA_ATTRIBUTION.md)
 - [Development provenance](docs/DEVELOPMENT_PROVENANCE.md)
-
-The technical report records implementation contributions verifiable from the
-Track 4 repository. The final team roster is maintained in the Devpost entry.
 
 ## Data and development disclosure
 
 The runtime uses the organizer-supplied catalog plus a disclosed aggregate
 verified-review-count prior derived from Amazon Reviews 2023. The compact TSV
-contains no review text, timestamps, user identifiers, or per-session/private
+contains no review text, timestamps, user identifiers, or per-session/unreleased
 labels. See [Data attribution](DATA_ATTRIBUTION.md) and
 [`submission/data/README.md`](submission/data/README.md). OpenAI Codex assisted
 with development-time inspection, review, testing, benchmark orchestration, and

@@ -1,8 +1,8 @@
-# Technical Agent Package Rules
+# Track 4 submission rules
 
 > This document covers the Track 4 Agent package only. It is not the complete
 > event-submission checklist. The event also requires a Devpost description, a
-> public repository with README, and a public three-minute YouTube demo; verify
+> public repository with README, and a short public YouTube demo; verify
 > the current requirements on the
 > [official Devpost page](https://tiktoktechjam2026.devpost.com/).
 
@@ -50,24 +50,29 @@ You may include:
 
 Do not include:
 
-- private evaluation data
+- unreleased final evaluation data or labels
 - copied organizer-only files
 - API keys or secrets
 - code that requires privileged host access
 - code that modifies evaluator files
-- code that depends on undeclared external services for official final scoring
+- code that depends on undeclared external services
 
 ## Model Policy
 
-Teams may prototype with any legally accessible LLM API or local model during
-development.
+Teams may use any legally accessible LLM API, local model, or non-LLM approach.
+LLM usage is optional.
 
-For official final scoring, organizer policy may disable network access.
-Therefore:
+The final evaluation package will be released after the Devpost submission
+deadline, and teams will run the unmodified official evaluator in their own
+environments. Network access and external API calls are allowed. Teams must:
 
-- your submission must clearly document whether it requires network access
-- if your system has an offline fallback, describe it
-- if your system cannot run without live credentials, say so explicitly
+- manage their own credentials, usage limits, service availability, and costs;
+- pass API keys through environment variables and never commit secret values;
+- document the required environment-variable names and setup instructions;
+- disclose model choice, network dependencies, latency, token usage, estimated
+  cost, and any fallback behavior.
+
+An offline fallback is not mandatory.
 
 ## Output Rules
 
@@ -91,6 +96,20 @@ Your submission package must contain:
 If your code cannot be reproduced from the submitted bundle and instructions,
 the organizer may treat the run as invalid.
 
+## Final evaluation and code freeze
+
+- The repository commit submitted by the Devpost deadline is the frozen version
+  of the solution.
+- After the final evaluation package is released, teams must not modify their
+  Agent, prompts, indexes, model configuration, or other solution components.
+- Teams must run the unmodified official evaluator against the released final
+  package using the frozen submitted commit.
+- Teams must retain the generated `results.json`, including per-session results,
+  together with the submitted commit hash and relevant environment and execution
+  details.
+- The organizer may request logs or other supporting evidence to review reported
+  results.
+
 ## Recommended File Layout
 
 ```text
@@ -103,7 +122,10 @@ submission/
 
 ## Final Notes
 
-- The organizer reserves the right to run your submission under CPU, memory,
-  timeout, and network restrictions.
-- The organizer will score only the frozen official artifacts and the output
-  produced by your submitted code in that environment.
+- There is no standardized organizer-provided CPU, RAM, GPU, startup-time, or
+  per-response limit because teams run final evaluation in their own
+  environments.
+- Final results must be generated using the unmodified released evaluator. The
+  current evaluator does not impose a separate explicit per-response timeout.
+- See [Final Evaluation FAQ](final_evaluation_faq.md) for the complete current
+  policy.

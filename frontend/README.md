@@ -1,11 +1,9 @@
 # Conversation viewer
 
-The local viewer turns an evaluation session definition into an animated
-shopping dialogue. By default the picker includes all 200 organizer-public
-development sessions plus a deterministic 20-session preview from the shared
-2,000-session generated-development split. It uses the same customer policy,
-override timing, hit rules, and ten-turn limit as
-`evaluator/local_evaluator.py`.
+The local viewer turns one of the evaluation session definitions into an
+animated shopping dialogue. It uses the same customer policy, override timing,
+hit rules, and ten-turn limit as `evaluator/local_evaluator.py`. It is an
+optional demo adapter, not part of the submitted Agent or official scoring.
 
 ## Run it
 
@@ -17,11 +15,10 @@ make frontend
 
 Then open <http://localhost:8787>. The first startup takes several seconds
 because the selected candidate builds its 50,000-product search index once.
-`make frontend` also creates the reproducible generated split when it is not
-already present. Generated-dev entries are visibly labeled and can be isolated
-with the dataset filter.
 
-The default is the selected production backend,
+The default adapter uses the same selected review-prior inverse-DP core and
+configuration as `submission/agent.py`, loaded through the historical experiment
+entrypoint
 `experiments/algo/tunglam-inverse-dp-review-prior/entrypoint.py`. It uses the
 offline review-prior inverse-DP configuration that scored `0.958456` on the
 2,000-session generated-dev split. To preview another experiment:
@@ -31,31 +28,49 @@ offline review-prior inverse-DP configuration that scored `0.958456` on the
   --entrypoint experiments/algo/<owner>-<approach>/entrypoint.py
 ```
 
-Optional flags are `--host`, `--port`, `--catalog`, `--dataset`,
-`--generated-dataset`, and `--generated-limit`. Set `--generated-limit 0` to
-show only the primary dataset, or raise it to preview more than the default 20.
+Optional flags are `--host`, `--port`, `--catalog`, and `--dataset`.
 
 ## How it works
 
-- `GET /api/sessions` returns safe chooser metadata with public/generated source
-  labels. Ground truth and generated intent fields are deliberately omitted.
-- `POST /api/simulate` accepts a public ID such as `public_0001` or a generated
-  ID such as `unseen_dev_00001`, then runs the chosen candidate against the
-  canonical simulated customer.
+- `GET /api/sessions` returns safe chooser metadata. Ground truth and generated
+  intent fields are deliberately omitted.
+- `POST /api/simulate` accepts `{"sample_id": "public_0001"}` and runs the
+  chosen candidate against the canonical simulated customer.
 - The returned transcript contains the assistant's text, requested attribute,
-  and catalog-enriched recommendation cards for every turn.
-- Between each customer message and agent reply, a right-aligned calculation
-  card shows target-free algorithm diagnostics: surviving hypotheses, evaluated
-  finite-horizon DP states, selected Top-K, retrieval route, prior, and runtime.
-  It switches to “Calculation complete” and remains in the transcript for that
-  turn.
+  catalog-enriched recommendation cards, and a read-only Agent decision trace
+  for every turn. The trace exposes the inferred route, active/focus/recovery
+  counts, grounded evidence, selected prior, rejected count, chosen K, and the
+  actual decision policy (`finite-horizon DP`, `conservative recovery`, or the
+  pre-override K=1 guard).
 - Playback shows a left-aligned customer typing indicator before each message,
   followed by short reading and reply pauses scaled to the selected speed.
 - The browser can auto-play, pause, step through, replay, filter sessions, pick
   a random session, and copy the completed transcript.
 
+## Target and Agent boundary
+
+The viewer reads labeled sessions because it must operate the deterministic
+customer and score the replay. The Agent itself receives only:
+
+```text
+reset(session_id, user_profile)
+respond(session_id, user_message, turn, top_k)
+```
+
+Ground truth, hidden intent cards, behavior fields, scenario labels, difficulty,
+and `sample_id` are never passed into the Agent. The server captures the
+target-free trace immediately after `respond`, then separately compares the
+returned ASINs with evaluator ground truth. “Target found” badges and outcome
+cards are therefore evaluator-side visualization added after the decision.
+
+The default first session is intentionally not hidden even though it is a
+turn-one hit. That behavior comes from exact hypothesis narrowing plus the
+review prior. For a video that visibly shows three turns of narrowing, select
+`public_0120`; useful backup cases are `public_0080` (Intent Override) and
+`public_0112` (Boundary).
+
+The viewer is not included in the deterministic `submission.zip`; that archive
+contains only the competition runtime under `submission/`.
+
 The server uses Python's standard library and the frontend has no build step or
 external runtime dependency.
-
-The generated-development split is a visible, deterministic robustness fixture;
-it is not organizer-private test data or an estimate of the private target set.

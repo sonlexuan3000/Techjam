@@ -16,7 +16,7 @@ This competition package is derived from **Amazon Reviews 2023**, published by M
   exclusive `2023-10-01` cutoff; runtime weight is count plus one
 
 The competition package does not contain images, videos, account credentials,
-private organizer labels, or private holdout sessions.
+unreleased organizer labels, or final-evaluation sessions.
 
 The final InverseCart runtime bundles
 `submission/data/review_prior.tsv`: 50,000 product-level aggregate counts and a
@@ -34,5 +34,11 @@ as held out. Results using it are disclosed separately from uniform and
 catalog-only ablations. See
 [offline-prior provenance](submission/data/README.md) for the raw source
 checksum, row counts, and exact reproduction commands.
+
+The organizer's current
+[Final Evaluation FAQ](docs/final_evaluation_faq.md) explicitly permits legally
+accessible Amazon Reviews 2023 data and local sidecar artifacts when their
+source and use are disclosed, while prohibiting reconstruction of unreleased
+evaluation labels. This prior contains no such session or label mapping.
 
 Participants must follow the source dataset's applicable terms and use the data only for the competition, research, and other permitted purposes. The competition organizer does not claim ownership of the underlying Amazon review or product content.

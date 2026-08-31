@@ -1,8 +1,9 @@
 # Devpost submission copy
 
 The sections below are written for direct use in the TikTok TechJam 2026
-Devpost form. Repository and video URLs should be entered in their dedicated
-Devpost fields rather than inserted into the body.
+Devpost form. Put the public repository and YouTube demo in any dedicated form
+fields and link the video in the project description as required by the Track 4
+statement.
 
 ## Project title
 
@@ -49,11 +50,16 @@ On every turn, the agent:
 The required Buying, Browsing, Intent Override, and Boundary scenarios are
 handled through the official `Agent.reset` and `Agent.respond` interface.
 
+An optional local evaluation studio replays any public session as an animated
+conversation and exposes target-free decision traces: route, grounded evidence,
+candidate counts, prior, rejected products, and selected K. Target badges are
+added by the evaluator only after the Agent response and are never Agent input.
+
 ## How we built it
 
 The system has five technical layers.
 
-**1. Model-based product hypotheses.** During startup, one catalog pass derives
+**1. Protocol inversion: product-as-hypothesis retrieval.** During startup, one catalog pass derives
 the published hard/soft intent representation for every product and builds
 category, initial-message, and exact-constraint indexes. An exhaustive audit
 found zero representation/category mismatches across all 50,000 catalog entries.
@@ -85,6 +91,11 @@ remaining horizon.
 one aggregate number per product. The prior changes ordering and DP branch
 probabilities, but never eligibility. The compact runtime asset contains no
 review text, timestamps, user identifiers, or organizer session labels.
+
+The submitted runtime does not load `public_set.jsonl`, generated intent cards,
+behavior flags, ground truth, or result files. It derives product-side
+hypotheses only from participant-visible catalog metadata and the published
+simulator policy.
 
 ## Challenges we ran into
 
@@ -130,11 +141,11 @@ private-score estimates.
   summaries (hit, first-hit turn, and rank).
 - The final runtime uses only the Python standard library and requires zero
   model calls, tokens, API credentials, or marginal model cost.
-- Sixty-six unit, state, contract, core, and integration tests pass on Python 3.10
-  and 3.11.
+- Seventy-five tests pass on Python 3.10 and 3.11: 54 shared
+  state/parser/contract/frontend tests and 21 selected inverse-DP core tests.
 
 The public and generated results are development evidence, not claims about the
-organizer's private evaluation set.
+unreleased final-evaluation set.
 
 ## What we learned
 
@@ -170,21 +181,13 @@ stateful Agent with synchronization and observability for concurrent serving.
 
 - Python 3.10+
 - Python standard library
+- Vanilla HTML, CSS, and JavaScript for the optional local viewer
 - GitHub Actions
 - Organizer-supplied Amazon Reviews 2023-derived catalog and evaluator
 - Bundled product-level `verified_reviews_365d` aggregate derived from Amazon
   Reviews 2023
 - OpenAI Codex for development-time inspection, code review, testing, benchmark
   orchestration, and documentation; Codex is not used by the runtime
-
-## Repository-verifiable technical contributions
-
-- **Tung Lam Nguyen:** original inverse intent-card filtering, finite-horizon
-  recommendation-depth DP, and offline verified-review prior candidate.
-- **Lê Xuân Sơn:** Track 4 repository and evaluation setup, data-safety review,
-  lightweight NLP and recovery integration, candidate review and selection,
-  official adapter, tests, benchmark verification, release packaging, and
-  technical documentation.
 
 ## APIs, libraries, and assets disclosure
 
@@ -198,7 +201,7 @@ stateful Agent with synchronization and observability for concurrent serving.
   `Clothing_Shoes_and_Jewelry`. The count is the number of verified review
   records in the 365 days before `2023-10-01`; runtime weight is count plus one.
 - The prior contains no review text, timestamp, user identifier, individual
-  review row, public-session mapping, or private organizer label.
+  review row, public-session mapping, or unreleased organizer label.
 - Development fixture: 100 model-generated human-style language cases, used
   only as a diagnostic and never loaded by the runtime.
 
@@ -210,6 +213,7 @@ cd Techjam
 make setup
 make test
 make demo
+make frontend
 ```
 
 `make setup` downloads the frozen organizer catalog, verifies its SHA-256 and
@@ -222,7 +226,7 @@ coverage. No API key or environment variable is required.
   scenario behavior, score function, review-popularity assumption, and ten-turn
   horizon.
 - The public development set was used to choose the final prior. Its result is
-  not an unbiased estimate of private performance.
+  not an unbiased estimate of final-evaluation performance.
 - The full-source aggregate may include review events from periods later held
   out by the organizer; it supports a predictive prior, not a leakage-free or
   causal claim.
@@ -233,3 +237,6 @@ coverage. No API key or environment variable is required.
 - The anonymized user profile is retained but not used for ranking.
 - The Agent supports sequential sessions and needs an external lock for
   concurrent calls.
+- The organizer states that final evaluation keeps the released deterministic
+  templates and response policy. The main unknown is the unreleased target
+  distribution, not a hidden language-template change.

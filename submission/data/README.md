@@ -34,7 +34,7 @@ events from periods the organizer later treats as held out. The asset therefore
 supports a predictive popularity assumption, not a causal or temporally
 leakage-free claim. After external data was confirmed permitted, the final prior
 was selected on the organizer-labeled public development set. It uses no
-organizer-private session or label.
+unreleased final-evaluation session or label.
 
 ## Reproduction
 

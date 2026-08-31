@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-from collections import Counter
 import unittest
+from types import SimpleNamespace
 
 from frontend.server import (
     DEFAULT_CANDIDATE_NAME,
     DEFAULT_ENTRYPOINT,
-    DEFAULT_GENERATED_DATASET,
-    DEFAULT_GENERATED_SESSION_LIMIT,
     SimulationService,
     UnknownSessionError,
-    label_sessions,
     picker_session,
     product_view,
-    select_generated_sessions,
 )
 
 
@@ -64,20 +60,57 @@ class ScriptedAgent:
             },
         )
 
-    def debug_algorithm_stats(self, session_id: str) -> dict:
-        turn = self.respond_calls[-1][2]
+
+class TraceableAgent(ScriptedAgent):
+    def __init__(
+        self,
+        responses: dict[int, dict],
+        *,
+        nlp_fallback: bool = False,
+        pre_override: bool = False,
+    ) -> None:
+        super().__init__(responses)
+        self.nlp_fallback = nlp_fallback
+        self.pre_override = pre_override
+        self.prior_field = "verified_reviews_365d"
+        self.prior_smoothing = 1.0
+        self.products = {
+            "B_TARGET": SimpleNamespace(prior_weight=7.0),
+            "B_OTHER": SimpleNamespace(prior_weight=1.0),
+        }
+        self.sessions: dict[str, SimpleNamespace] = {}
+
+    def reset(self, session_id: str, user_profile: dict) -> None:
+        super().reset(session_id, user_profile)
+        focus = [] if self.nlp_fallback else ["B_TARGET", "B_OTHER"]
+        self.sessions[session_id] = SimpleNamespace(
+            initial_candidates=[] if self.nlp_fallback else ["B_TARGET", "B_OTHER"],
+            current_candidates=focus,
+            focus_candidates=focus,
+            trusted_universe=("B_TARGET", "B_OTHER"),
+            rejected=set(),
+            scenario=(
+                "intent_override"
+                if self.pre_override
+                else "exploring" if self.nlp_fallback else "buying"
+            ),
+            nlp_fallback=self.nlp_fallback,
+            override_seen=False,
+            override_applied=not self.pre_override,
+        )
+
+    def debug_state(self, session_id: str) -> dict:
+        if session_id not in self.sessions:
+            raise KeyError(session_id)
         return {
-            "hypothesis_count": 40 - turn,
-            "focus_count": 40 - turn,
-            "recovery_count": 0,
-            "evidence_count": turn,
-            "rejected_count": max(0, turn - 1),
-            "dp_state_count": 20 + turn,
-            "selected_k": 3,
-            "retrieval_mode": "exact_protocol",
-            "policy_mode": "finite_horizon_dp",
-            "prior_mode": "uniform",
-            "nlp_fallback": False,
+            "current_intent": [
+                {
+                    "text": "cotton",
+                    "slot": "material",
+                    "active": True,
+                }
+            ],
+            "negative_evidence": [],
         }
 
 
@@ -124,57 +157,15 @@ class FrontendSimulationTests(unittest.TestCase):
             DEFAULT_CANDIDATE_NAME,
             "Offline review-prior inverse-DP · production",
         )
-        self.assertEqual(DEFAULT_GENERATED_DATASET.name, "dev_set.jsonl")
-        self.assertEqual(DEFAULT_GENERATED_SESSION_LIMIT, 20)
 
     def test_picker_payload_never_exposes_ground_truth_or_hidden_intent(self) -> None:
-        payload = picker_session(label_sessions([sample()], "public")[0])
+        payload = picker_session(sample())
 
         self.assertNotIn("ground_truth", payload)
         self.assertNotIn("intent_card", payload)
         self.assertNotIn("behavior", payload)
-        self.assertNotIn("_frontend_dataset_source", payload)
         self.assertEqual(payload["sample_id"], "test_buying")
-        self.assertEqual(payload["dataset_source"], "public")
         self.assertEqual(payload["user_profile"]["preference_tags"], ["comfort", "fit"])
-
-    def test_generated_picker_fields_are_derived_without_target_data(self) -> None:
-        generated = sample(scenario="boundary")
-        generated.pop("difficulty_bucket")
-        generated.pop("category_bucket")
-        generated = label_sessions([generated], "generated_dev")[0]
-
-        payload = picker_session(generated)
-
-        self.assertEqual(payload["dataset_source"], "generated_dev")
-        self.assertEqual(payload["difficulty_bucket"], "medium")
-        self.assertEqual(payload["category_bucket"], "clothing")
-        self.assertNotIn("ground_truth", payload)
-
-    def test_generated_preview_is_deterministic_and_scenario_proportional(self) -> None:
-        scenario_counts = {
-            "buying": 40,
-            "browsing": 40,
-            "intent_override": 15,
-            "boundary": 5,
-        }
-        generated = [
-            {"sample_id": f"generated_{scenario}_{index:03d}", "scenario_type": scenario}
-            for scenario, count in scenario_counts.items()
-            for index in range(count)
-        ]
-
-        selected = select_generated_sessions(generated, 20)
-        selected_again = select_generated_sessions(list(reversed(generated)), 20)
-
-        self.assertEqual(
-            Counter(item["scenario_type"] for item in selected),
-            Counter({"buying": 8, "browsing": 8, "intent_override": 3, "boundary": 1}),
-        )
-        self.assertEqual(
-            [item["sample_id"] for item in selected],
-            [item["sample_id"] for item in selected_again],
-        )
 
     def test_simulation_hydrates_ranked_products_and_stops_on_hit(self) -> None:
         agent = ScriptedAgent(
@@ -204,43 +195,101 @@ class FrontendSimulationTests(unittest.TestCase):
         self.assertTrue(recommendations[1]["is_target"])
         self.assertEqual(recommendations[1]["title"], "Target cotton shirt")
         self.assertEqual(agent.respond_calls[0][3], 10)
-        calculation = result["transcript"][0]["assistant"]["calculation"]
+
+    def test_production_style_trace_is_target_free_and_explains_ranking(self) -> None:
+        agent = TraceableAgent(
+            {
+                1: {
+                    "message": "This is the strongest current match.",
+                    "ask_attribute": "other",
+                    "recommendations": [{"parent_asin": "B_TARGET"}],
+                }
+            }
+        )
+        service = service_for(sample(), agent)
+
+        result = service.simulate("test_buying")
+        turn = result["transcript"][0]
+        trace = turn["assistant"]["trace"]
+
+        self.assertEqual(trace["route"], "exact-inverse")
+        self.assertEqual(trace["policy"], "finite-horizon DP")
+        self.assertEqual(trace["active_candidates"], 2)
+        self.assertEqual(trace["k"], 1)
+        self.assertEqual(trace["prior"], "verified reviews (365d) + 1")
+        self.assertEqual(trace["evidence"][0]["text"], "cotton")
         self.assertEqual(
+            turn["assistant"]["recommendations"][0]["ranking_signal"],
             {
-                "catalog_products": calculation["catalog_products"],
-                "shortlist_size": calculation["shortlist_size"],
-                "new_products": calculation["new_products"],
-                "products_shown": calculation["products_shown"],
-                "turn": calculation["turn"],
-            },
-            {
-                "catalog_products": 2,
-                "shortlist_size": 2,
-                "new_products": 2,
-                "products_shown": 2,
-                "turn": 1,
+                "label": "Verified reviews · 365d",
+                "value": 6,
+                "weight": 7.0,
             },
         )
-        self.assertGreaterEqual(calculation["elapsed_ms"], 0)
-        self.assertEqual(calculation["hypothesis_count"], 39)
-        self.assertEqual(calculation["evidence_count"], 1)
-        self.assertEqual(calculation["dp_state_count"], 21)
-        self.assertEqual(calculation["selected_k"], 3)
-        self.assertEqual(calculation["retrieval_mode"], "exact_protocol")
-        self.assertEqual(calculation["policy_mode"], "finite_horizon_dp")
-        self.assertEqual(calculation["prior_mode"], "uniform")
-        self.assertNotIn("target", calculation)
-        self.assertNotIn("target_rank", calculation)
 
-    def test_session_listing_reports_dataset_source_counts(self) -> None:
-        generated_sample = label_sessions([sample()], "generated_dev")[0]
-        service = service_for(generated_sample, ScriptedAgent({}))
+        forbidden = {"target", "ground_truth", "target_rank", "is_target", "hit"}
 
-        payload = service.list_sessions()
+        def assert_no_forbidden_keys(value: object) -> None:
+            if isinstance(value, dict):
+                self.assertTrue(forbidden.isdisjoint(value))
+                for child in value.values():
+                    assert_no_forbidden_keys(child)
+            elif isinstance(value, list):
+                for child in value:
+                    assert_no_forbidden_keys(child)
 
-        self.assertEqual(payload["total"], 1)
-        self.assertEqual(payload["source_counts"], {"generated_dev": 1})
-        self.assertEqual(payload["sessions"][0]["dataset_source"], "generated_dev")
+        assert_no_forbidden_keys(trace)
+        self.assertNotIn("B_TARGET", repr(trace))
+        self.assertNotIn("B_TARGET", repr(agent.respond_calls[0]))
+
+        # The same target-free trace must identify the production pre-override
+        # K=1 guard accurately instead of presenting it as a DP decision.
+        agent = TraceableAgent(
+            {
+                1: {
+                    "message": "One provisional option while your intent can still change.",
+                    "ask_attribute": "other",
+                    "recommendations": [{"parent_asin": "B_TARGET"}],
+                }
+            },
+            pre_override=True,
+        )
+        service = service_for(sample(), agent)
+
+        result = service.simulate("test_buying")
+        trace = result["transcript"][0]["assistant"]["trace"]
+
+        self.assertEqual(trace["scenario"], "intent_override")
+        self.assertEqual(trace["policy"], "pre-override guard")
+        self.assertEqual(trace["k"], 1)
+        self.assertFalse(trace["override_applied"])
+        self.assertIn("not scoreable", trace["explanation"])
+
+    def test_recovery_trace_keeps_the_trusted_universe_visible(self) -> None:
+        agent = TraceableAgent(
+            {
+                1: {
+                    "message": "I need one more detail.",
+                    "ask_attribute": "other",
+                    "recommendations": [{"parent_asin": "B_OTHER"}],
+                },
+                2: {
+                    "message": "Now I can rank the match.",
+                    "ask_attribute": "other",
+                    "recommendations": [{"parent_asin": "B_TARGET"}],
+                },
+            },
+            nlp_fallback=True,
+        )
+        service = service_for(sample(), agent)
+
+        result = service.simulate("test_buying")
+        trace = result["transcript"][0]["assistant"]["trace"]
+
+        self.assertEqual(trace["route"], "nlp-recovery")
+        self.assertEqual(trace["policy"], "conservative recovery")
+        self.assertEqual(trace["trusted_candidates"], 2)
+        self.assertEqual(trace["active_candidates"], 2)
 
     def test_override_target_is_not_scored_until_override_is_applied(self) -> None:
         override_behavior = {
@@ -279,12 +328,6 @@ class FrontendSimulationTests(unittest.TestCase):
             "Actually, ignore red. What I need is: color: blue.",
         )
         self.assertTrue(result["transcript"][1]["assistant"]["recommendations"][0]["is_target"])
-        first_calculation = result["transcript"][0]["assistant"]["calculation"]
-        second_calculation = result["transcript"][1]["assistant"]["calculation"]
-        self.assertEqual(first_calculation["new_products"], 1)
-        self.assertEqual(first_calculation["products_shown"], 1)
-        self.assertEqual(second_calculation["new_products"], 0)
-        self.assertEqual(second_calculation["products_shown"], 1)
 
     def test_replays_reuse_one_candidate_session_slot(self) -> None:
         agent = ScriptedAgent(

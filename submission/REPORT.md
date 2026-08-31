@@ -16,6 +16,14 @@ count. The profile is retained but not used for ranking. Runtime inference
 requires no model, external API, third-party package, network connection,
 vector store, or credential.
 
+The Agent never loads session datasets, target ASINs, intent cards, behavior
+flags, or evaluation results. The bundled sidecar is only a 50,000-row
+`parent_asin -> verified_reviews_365d` table. This boundary also explains why a
+turn-one hit can be legitimate: the opening message may identify only a small
+set of product hypotheses, after which the disclosed prior determines their
+order. On public development, 90 of 200 sessions hit on turn one; the remaining
+first hits are 71 on turn two, 20 on turn three, and 19 on turn four.
+
 ## Method
 
 ### Catalog representation
@@ -114,7 +122,7 @@ sample eligible products roughly uniformly and use public seeds.
 After the team confirmed with judges that external data was permitted, the
 final review prior was selected on the organizer-labeled public development set.
 We therefore report its public gain and generated-holdout regression together;
-neither is presented as organizer-private performance.
+neither is presented as unreleased final-evaluation performance.
 
 ### Public development result
 
@@ -193,15 +201,15 @@ make demo
 make submission-archive
 ```
 
-The final suite contains 45 shared/state/contract tests and 21 selected
-inverse-DP core tests: 66 total. CI runs on Python 3.10 and 3.11.
+The final suite contains 54 shared state/parser/contract/frontend tests and 21
+selected inverse-DP core tests: 75 total. CI runs on Python 3.10 and 3.11.
 
 ## Limitations
 
-- The policy is optimized within the released intent-card construction,
-  disclosure order, scenario model, score function, review-popularity prior,
-  and ten-turn horizon. Changed private mechanics or target distribution may
-  reduce the gain.
+- The organizer states that final evaluation preserves the released intent-card
+  behavior, deterministic message templates, interface, scoring, and response
+  policy. The remaining generalization risk is the unreleased target
+  distribution, especially whether it matches the review-popularity prior.
 - The language layer handles supported wrappers and exact catalog values, not
   arbitrary semantic paraphrases.
 - The anonymized `user_profile` is retained per session but not used in ranking
@@ -209,20 +217,8 @@ inverse-DP core tests: 66 total. CI runs on Python 3.10 and 3.11.
 - One Agent instance supports multiple sequential sessions and needs external
   synchronization when embedded in a concurrent server.
 - Generated development/holdout data shares released evaluator assumptions;
-  public and generated scores are not organizer-private predictions.
+  public and generated scores are not final-evaluation predictions.
 - The public development set was used to select the final prior.
 - The review aggregate scans the full disclosed source before its cutoff and
   may include periods later treated as held out; it carries no per-session or
   private labels, but is not claimed to be temporally leakage-free.
-
-## Repository-verifiable technical contributions
-
-The entries below cover Track 4 implementation work verifiable from repository
-history at final integration.
-
-- **Tung Lam Nguyen:** original inverse intent-card filtering, finite-horizon
-  recommendation-depth DP, and offline verified-review prior candidate.
-- **Lê Xuân Sơn:** Track 4 repository and evaluation setup, data-safety review,
-  lightweight NLP and recovery integration, candidate review and selection,
-  official adapter, tests, benchmark verification, release packaging, and
-  technical documentation.

@@ -7,7 +7,7 @@
       name="description"
       content="Choose a TechJam evaluation session and watch the shopping agent play it as a chat conversation."
     />
-    <title>ThoSanQuyBa — Session simulator</title>
+    <title>InverseCart — Evaluation studio</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -22,14 +22,14 @@
             </svg>
           </div>
           <div>
-            <p class="brand-name">ThoSanQuyBa</p>
-            <p class="brand-subtitle">Evaluation studio</p>
+            <p class="brand-name">InverseCart</p>
+            <p class="brand-subtitle">ThoSanQuyBa · Evaluation studio</p>
           </div>
         </div>
 
         <div class="rail-heading">
           <div>
-            <p class="eyebrow">Evaluation datasets</p>
+            <p class="eyebrow">Public dataset</p>
             <h1>Choose a session</h1>
           </div>
           <button class="icon-button" id="random-session" type="button" title="Pick a random session">
@@ -51,14 +51,6 @@
         </div>
 
         <div class="filter-row">
-          <label class="source-filter">
-            <span class="sr-only">Dataset</span>
-            <select id="source-filter">
-              <option value="all">All datasets</option>
-              <option value="public">Public 200</option>
-              <option value="generated_dev">Generated dev preview</option>
-            </select>
-          </label>
           <label>
             <span class="sr-only">Scenario</span>
             <select id="scenario-filter">
@@ -69,7 +61,7 @@
               <option value="boundary">Boundary</option>
             </select>
           </label>
-          <label class="difficulty-filter">
+          <label>
             <span class="sr-only">Difficulty</span>
             <select id="difficulty-filter">
               <option value="all">Any difficulty</option>
@@ -149,6 +141,17 @@
           <dl class="profile-facts" id="profile-facts"></dl>
         </section>
 
+        <aside class="evaluation-boundary" aria-label="Agent and evaluator data boundary">
+          <span class="boundary-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+          </span>
+          <p>
+            <strong>Leakage-safe evaluation view.</strong>
+            The Agent receives only profile, message, turn and Top-K. Target badges and hit metrics
+            are added after its response; the decision trace is read-only.
+          </p>
+        </aside>
+
         <section class="conversation-stage" id="conversation-stage" aria-label="Simulated conversation">
           <div class="chat-scroll" id="chat-scroll">
             <div class="empty-state" id="empty-state">
@@ -164,8 +167,9 @@
               <p class="eyebrow">Dialogue simulator</p>
               <h3>See the agent think in turns</h3>
               <p class="empty-copy">
-                Pick a public or generated-dev session, then watch the customer policy and shopping agent
-                exchange messages until the hidden product is found—or turn 10 is reached.
+                Pick any evaluation session, then watch the customer policy and shopping agent
+                exchange messages until the hidden product is found—or turn 10 is reached. Each
+                response exposes its candidate pool, evidence, prior and selected K.
               </p>
               <div class="empty-actions">
                 <button class="primary-button" id="empty-autoplay" type="button" disabled>

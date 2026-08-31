@@ -20,13 +20,22 @@
     "review_prior_tsv": "45bc7fa2053e55c2bdef7454c2461886a02ef25d0d25339d5d51a5affaafcfd6"
   },
   "verification": {
-    "passing_tests": 66,
+    "passing_tests": 75,
+    "shared_tests": 54,
+    "selected_inverse_dp_tests": 21,
+    "official_policy_commit": "9c9e7c9ff6705142d6ab386dc1c432fc529df893",
+    "submission_archive_sha256": "5b6266ae68fd62d87ef2c92785c375685743cc96f0de198350c0b068c01e3803",
     "catalog_card_category_rows_checked": 50000,
     "catalog_card_category_mismatches": 0,
     "review_prior_wrapper_sessions_checked": 2000,
     "review_prior_wrapper_session_summary_mismatches": 0,
     "review_prior_products": 50000,
-    "review_prior_nonzero_products": 5777
+    "review_prior_nonzero_products": 5777,
+    "agent_loads_session_or_ground_truth_data": false,
+    "frontend_trace_target_fields_tested_absent": true,
+    "frontend_trace_turns_checked": 368,
+    "frontend_trace_target_asin_leaks": 0,
+    "frontend_trace_forbidden_key_occurrences": 0
   },
   "runtime": {
     "python": ">=3.10",
@@ -67,6 +76,12 @@
       "earlier_turn": 117,
       "same_turn": 82,
       "later_turn": 1
+    },
+    "first_hit_turn_distribution": {
+      "1": 90,
+      "2": 71,
+      "3": 20,
+      "4": 19
     },
     "scenario_metrics": {
       "buying": {"sample_count": 80, "hit_rate_at_10": 1.0, "mrr": 1.0, "mttc": 1.3375},
