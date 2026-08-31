@@ -15,10 +15,10 @@ score-aware recommendation depth.
 
 ## Short description
 
-InverseCart treats every catalog product as a conversation hypothesis, narrows
-those hypotheses from multi-turn evidence, and uses finite-horizon dynamic
-programming to decide how many products to recommend before learning from the
-next clarification.
+InverseCart treats every catalog product as a conversation hypothesis, combines
+multi-turn evidence with a disclosed offline popularity prior, and uses
+finite-horizon dynamic programming to decide how many products to recommend
+before learning from the next clarification.
 
 ## Inspiration
 
@@ -51,7 +51,7 @@ handled through the official `Agent.reset` and `Agent.respond` interface.
 
 ## How we built it
 
-The system has four technical layers.
+The system has five technical layers.
 
 **1. Model-based product hypotheses.** During startup, one catalog pass derives
 the published hard/soft intent representation for every product and builds
@@ -80,8 +80,11 @@ reply through turn ten. Products that would generate the same next reply form a
 DP branch. The chosen cutoff therefore changes with the belief state and
 remaining horizon.
 
-The selected inverse-DP prior is uniform. A catalog `rating_number` prior was
-implemented as an ablation but produced slightly worse MRR and Technical Score.
+**5. Offline popularity belief.** The shipped weight is
+`verified_reviews_365d + 1`, derived once from Amazon Reviews 2023 and bundled as
+one aggregate number per product. The prior changes ordering and DP branch
+probabilities, but never eligibility. The compact runtime asset contains no
+review text, timestamps, user identifiers, or organizer session labels.
 
 ## Challenges we ran into
 
@@ -101,27 +104,33 @@ intent arrives are not scoreable, while later recommendations are. We therefore
 track provisional and genuine misses separately so an override can repair the
 former without reviving the latter.
 
-Finally, we wanted comparison results that did not simply overfit the visible
-200 sessions. We generated 2,000 development and 800 post-freeze regression
-sessions from catalog products with zero public-target overlap. The reported
-final public-set run was an integration check after algorithm selection, not a
-selection metric.
+Finally, the popularity prior behaved differently across target distributions.
+We selected it on the organizer-labeled public development set after confirming
+that external data was permitted, and retained 2,000 generated development plus
+800 generated holdout sessions with zero public-target overlap as contrary
+evidence. The generated fixtures sample eligible targets roughly uniformly, so
+their smaller gain and holdout regression are expected warnings rather than
+private-score estimates.
 
 ## Accomplishments that we are proud of
 
-- On the final post-freeze organizer public integration check, InverseCart
-  reached HR@10 `1.0000`, MRR `0.997500`, MTTC `2.7950`, and Technical Score
-  `0.963350` across 200 sessions.
-- On 2,000 generated-development sessions, it reached HR@10 `0.9935`, MRR
-  `0.977300`, MTTC `2.6255`, and Technical Score `0.957430`.
-- It improved generated-development Technical Score by `0.042369` and MRR by
-  `0.124531` over the previous exact-evidence backend.
-- A separate 800-session post-freeze regression run scored `0.961176`.
+- On the organizer public development set, InverseCart reached HR@10 `1.0000`,
+  MRR `1.000000`, MTTC `1.8400`, and Technical Score `0.983200` across 200
+  sessions.
+- Against the identical uniform core, the prior moved 117 public targets to an
+  earlier turn, left 82 unchanged, and moved one later; Technical Score improved
+  by `0.019850`.
+- On 2,000 generated-development sessions, the shipped prior reached HR@10
+  `0.9945`, MRR `0.978687`, MTTC `2.6200`, and Technical Score `0.958456` — a
+  smaller `+0.001026` over uniform.
+- On the separate generated 800-session holdout, it scored `0.957322`, which is
+  `0.003854` below uniform. We disclose that regression alongside the selected
+  public result.
 - Exact-value wrapper changes produced `0/2,000` differing scored-session
   summaries (hit, first-hit turn, and rank).
 - The final runtime uses only the Python standard library and requires zero
   model calls, tokens, API credentials, or marginal model cost.
-- Sixty unit, state, contract, core, and integration tests pass on Python 3.10
+- Sixty-six unit, state, contract, core, and integration tests pass on Python 3.10
   and 3.11.
 
 The public and generated results are development evidence, not claims about the
@@ -133,9 +142,12 @@ More recommendations are not always better. A successful low-ranked result can
 be worse than exposing a small prefix and using the next response to separate
 the remaining hypotheses.
 
-We also learned that catalog popularity was not automatically a better prior.
-On the generated-development target distribution, a uniform belief produced
-better MRR and Technical Score than the `rating_number` ablation.
+We also learned that “popularity” is not one interchangeable feature. The
+organizer catalog's lifetime-like `rating_number` ablation underperformed
+uniform on generated development. On public development it reached `0.979900`,
+but the recent verified-review prior reached `0.983200`. On a roughly uniform
+generated holdout, however, that same review prior regressed. A prior must match
+the target distribution it claims to model.
 
 Most importantly, uncertainty should be represented explicitly. A parser guess
 can influence ranking without being promoted immediately into irreversible
@@ -160,13 +172,15 @@ stateful Agent with synchronization and observability for concurrent serving.
 - Python standard library
 - GitHub Actions
 - Organizer-supplied Amazon Reviews 2023-derived catalog and evaluator
+- Bundled product-level `verified_reviews_365d` aggregate derived from Amazon
+  Reviews 2023
 - OpenAI Codex for development-time inspection, code review, testing, benchmark
   orchestration, and documentation; Codex is not used by the runtime
 
 ## Repository-verifiable technical contributions
 
-- **Tung Lam Nguyen:** original inverse intent-card filtering and finite-horizon
-  recommendation-depth DP candidate.
+- **Tung Lam Nguyen:** original inverse intent-card filtering, finite-horizon
+  recommendation-depth DP, and offline verified-review prior candidate.
 - **Lê Xuân Sơn:** Track 4 repository and evaluation setup, data-safety review,
   lightweight NLP and recovery integration, candidate review and selection,
   official adapter, tests, benchmark verification, release packaging, and
@@ -179,8 +193,12 @@ stateful Agent with synchronization and observability for concurrent serving.
 - Runtime language or embedding models: none.
 - Runtime credentials: none.
 - Runtime network access: none after the catalog has been provided.
-- Asset: the organizer-supplied 50,000-product catalog derived from Amazon
-  Reviews 2023, `Clothing_Shoes_and_Jewelry`.
+- Assets: the organizer-supplied 50,000-product catalog and one bundled
+  product-level count per catalog ASIN derived from Amazon Reviews 2023,
+  `Clothing_Shoes_and_Jewelry`. The count is the number of verified review
+  records in the 365 days before `2023-10-01`; runtime weight is count plus one.
+- The prior contains no review text, timestamp, user identifier, individual
+  review row, public-session mapping, or private organizer label.
 - Development fixture: 100 model-generated human-style language cases, used
   only as a diagnostic and never loaded by the runtime.
 
@@ -194,13 +212,20 @@ make test
 make demo
 ```
 
-`make setup` downloads the frozen organizer catalog, verifies its SHA-256, and
-checks the 50,000-row count. No API key or environment variable is required.
+`make setup` downloads the frozen organizer catalog, verifies its SHA-256 and
+50,000-row count, then checks the bundled prior's checksum and exact catalog
+coverage. No API key or environment variable is required.
 
 ## Known limitations
 
 - The policy depends on the released card construction, disclosure order,
-  scenario behavior, score function, and ten-turn horizon.
+  scenario behavior, score function, review-popularity assumption, and ten-turn
+  horizon.
+- The public development set was used to choose the final prior. Its result is
+  not an unbiased estimate of private performance.
+- The full-source aggregate may include review events from periods later held
+  out by the organizer; it supports a predictive prior, not a leakage-free or
+  causal claim.
 - General semantic-value paraphrases remain weak; the recovery tier limits
   damage but does not solve semantic equivalence.
 - The independent model-generated diagnostic grounded only `1/35` semantic

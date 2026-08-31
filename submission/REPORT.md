@@ -10,10 +10,11 @@ finite-horizon dynamic program then chooses the recommendation depth that best
 trades immediate rank reward against the expected value of the next `other`
 clarification.
 
-The final runtime receives only organizer-provided catalog fields, conversation
-messages, and the supplied anonymized profile. The profile is retained but not
-used for ranking. Runtime inference requires no model, external API, third-party
-package, network connection, vector store, or credential.
+The final runtime receives organizer-provided catalog fields, conversation
+messages, the supplied anonymized profile, and one bundled product-level review
+count. The profile is retained but not used for ranking. Runtime inference
+requires no model, external API, third-party package, network connection,
+vector store, or credential.
 
 ## Method
 
@@ -72,10 +73,13 @@ or-two-value response its own card would generate to `other`; equal replies form
 a branch for turn `t + 1`. The recurrence includes the released initial
 Browsing/Boundary mixture and terminates at turn ten.
 
-The selected exact-path prior is uniform. When uncertain NLP has a non-empty
-focus tier, that tier still uses DP. When it has no focus tier, the recovery path
-uses a conservative one/two/up-to-ten schedule rather than optimizing an
-unreliable ordering.
+The selected exact-path weight is `verified_reviews_365d + 1`. The verified
+count comes from a 365-day window ending before `2023-10-01`; smoothing keeps
+zero-review products possible. It controls both candidate order and DP branch
+probabilities, but never constraint eligibility. When uncertain NLP has a
+non-empty focus tier, that tier still uses DP. When it has no focus tier, the
+recovery path uses a conservative one/two/up-to-ten schedule rather than
+optimizing an unreliable ordering.
 
 ## Models, tools, APIs, assets, and cost
 
@@ -85,10 +89,12 @@ unreliable ordering.
 - Runtime network/API credentials: none.
 - Runtime prompt/completion tokens: `0 / 0`.
 - Estimated marginal runtime model cost: `$0`.
-- Runtime data: organizer-supplied catalog, evaluator messages, and the supplied
-  anonymized profile (retained but not used for ranking).
-- Asset source: organizer catalog derived from Amazon Reviews 2023,
-  `Clothing_Shoes_and_Jewelry`.
+- Runtime data: organizer-supplied catalog, evaluator messages, supplied
+  anonymized profile (retained but not used for ranking), and bundled
+  product-level review aggregate.
+- Asset source: organizer catalog plus `verified_reviews_365d` counts derived
+  from Amazon Reviews 2023, `Clothing_Shoes_and_Jewelry`. The TSV stores no
+  individual review, text, timestamp, user identifier, or session label.
 - Development assistance: OpenAI Codex supported repository inspection, code
   review, refactoring, test generation, benchmark orchestration, and
   documentation. Codex is not imported or called by the submitted runtime.
@@ -100,46 +106,58 @@ separately metered as a per-session runtime cost.
 
 ## Evaluation protocol
 
-Candidate selection used 2,000 deterministic generated-development sessions
-whose target ASINs have zero overlap with the organizer public 200. After the
-implementation was frozen, a separate 800-session generated split was used for
-regression. Its seed is public, so it is not a hidden or private-test estimate.
+Algorithm selection used 2,000 deterministic generated-development sessions
+whose target ASINs have zero overlap with the organizer public 200. A separate
+800-session generated split provides a reproducible distribution check. Both
+sample eligible products roughly uniformly and use public seeds.
 
-The final inverse-DP candidate and uniform-prior choice were made on generated
-development. The reported final public run occurred after the integration
-freeze and was treated as a protocol check rather than a selection metric.
+After the team confirmed with judges that external data was permitted, the
+final review prior was selected on the organizer-labeled public development set.
+We therefore report its public gain and generated-holdout regression together;
+neither is presented as organizer-private performance.
 
-### Public integration result
+### Public development result
 
 | Sessions | HR@10 | MRR | MTTC | Efficiency | Technical Score |
 |---:|---:|---:|---:|---:|---:|
-| 200 | 1.0000 | 0.997500 | 2.7950 | 0.8205 | 0.963350 |
+| 200 | 1.0000 | 1.000000 | 1.8400 | 0.9160 | 0.983200 |
+
+The identical uniform core scored `0.963350`. Paired by session, the final prior
+finds 117 targets earlier, 82 on the same turn, and one later.
+
+The catalog `rating_number` prior scored `0.979900`; the recent verified-review
+aggregate adds another `0.003300` on the same public development set.
 
 ### Candidate selection
 
 | Generated-development backend | HR@10 | MRR | MTTC | Technical Score |
 |---|---:|---:|---:|---:|
 | Previous exact-evidence backend | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
-| **Uniform inverse-DP — selected** | **0.9935** | **0.977300** | **2.6255** | **0.957430** |
-| Catalog `rating_number` prior | 0.9935 | 0.975782 | 2.6860 | 0.955765 |
+| Uniform inverse-DP | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
+| Catalog `rating_number` prior | 0.9935 | 0.974768 | 2.6890 | 0.955400 |
+| **Offline review prior — shipped** | **0.9945** | **0.978687** | **2.6200** | **0.958456** |
 
-The selected backend improves Technical Score by `0.042369` and MRR by
-`0.124531` over the previous backend on the same generated-development split.
-The uniform prior also outperformed the `rating_number` prior, so catalog
-popularity is retained only as a late tie-break among equally relevant uncertain
-matches.
+The shipped backend improves Technical Score by `0.043395` and MRR by
+`0.125918` over the previous backend on the same generated-development split.
+Its gain over uniform is `0.001026`; the catalog `rating_number` prior remains a
+separate weaker ablation.
 
-### Post-freeze regression
+### Generated holdout
 
-| Sessions | HR@10 | MRR | MTTC | Technical Score |
-|---:|---:|---:|---:|---:|
-| 800 | 0.9975 | 0.980420 | 2.5850 | 0.961176 |
+| Prior | Sessions | HR@10 | MRR | MTTC | Technical Score |
+|---|---:|---:|---:|---:|---:|
+| Uniform | 800 | 0.9975 | 0.980420 | 2.5850 | 0.961176 |
+| **Offline review prior — shipped** | **800** | **0.9925** | **0.976574** | **2.5950** | **0.957322** |
+
+The final prior regresses `0.003854` on this roughly uniformly sampled fixture.
+It gains no hits and loses four relative to uniform. This contrary result is a
+target-distribution warning, not hidden evaluation.
 
 ### Language robustness
 
 Changing only the natural-language wrappers while preserving exact catalog
-values produced the same `0.957430` generated-development score and `0/2,000`
-differing session summaries.
+values produced the same final-prior `0.958456` generated-development score and
+`0/2,000` differing session summaries.
 
 The harder independent 100-case diagnostic showed the boundary clearly:
 
@@ -154,10 +172,12 @@ claim to solve semantic equivalence.
 
 ## Runtime performance and reproducibility
 
-An Apple M4 measurement with the 50,000-product catalog showed `5.75 s` startup
-and approximately `199 MiB` maximum resident memory. Across 500 turns,
-response latency was `30.045 ms` mean, `2.368 ms` median, `136.585 ms` p95, and
-`847.916 ms` maximum. Timing varies with hardware and candidate-pool size.
+An Apple M4 measurement of the final backend with the 50,000-product catalog
+showed `6.4312 s` startup and a `194.80 MiB` Agent startup RSS increment. Across
+368 public-development response calls, latency was `17.527 ms` mean and
+`74.693 ms` p95. The full diagnostic process peaked near `403.39 MiB` because
+it also held a second evaluator catalog index. Timing varies with hardware and
+candidate-pool size.
 
 From the complete repository:
 
@@ -166,37 +186,42 @@ make setup
 make test
 make unseen-data
 make evaluate-unseen-dev
-# Run only after the implementation is frozen
+# Evaluate the separate generated holdout
 make evaluate-unseen-holdout
 make human-stress
 make demo
 make submission-archive
 ```
 
-The final suite contains 44 shared/state/contract tests and 16 selected
-inverse-DP core tests. CI runs on Python 3.10 and 3.11.
+The final suite contains 45 shared/state/contract tests and 21 selected
+inverse-DP core tests: 66 total. CI runs on Python 3.10 and 3.11.
 
 ## Limitations
 
 - The policy is optimized within the released intent-card construction,
-  disclosure order, scenario model, score function, uniform target prior, and
-  ten-turn horizon. Changed private mechanics may reduce the gain.
+  disclosure order, scenario model, score function, review-popularity prior,
+  and ten-turn horizon. Changed private mechanics or target distribution may
+  reduce the gain.
 - The language layer handles supported wrappers and exact catalog values, not
   arbitrary semantic paraphrases.
 - The anonymized `user_profile` is retained per session but not used in ranking
   because no safe, measured personalization gain was established.
 - One Agent instance supports multiple sequential sessions and needs external
   synchronization when embedded in a concurrent server.
-- Generated development/regression data shares released evaluator assumptions;
+- Generated development/holdout data shares released evaluator assumptions;
   public and generated scores are not organizer-private predictions.
+- The public development set was used to select the final prior.
+- The review aggregate scans the full disclosed source before its cutoff and
+  may include periods later treated as held out; it carries no per-session or
+  private labels, but is not claimed to be temporally leakage-free.
 
 ## Repository-verifiable technical contributions
 
 The entries below cover Track 4 implementation work verifiable from repository
-history at the integration freeze.
+history at final integration.
 
-- **Tung Lam Nguyen:** original inverse intent-card filtering and finite-horizon
-  recommendation-depth DP candidate.
+- **Tung Lam Nguyen:** original inverse intent-card filtering, finite-horizon
+  recommendation-depth DP, and offline verified-review prior candidate.
 - **Lê Xuân Sơn:** Track 4 repository and evaluation setup, data-safety review,
   lightweight NLP and recovery integration, candidate review and selection,
   official adapter, tests, benchmark verification, release packaging, and

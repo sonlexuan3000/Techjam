@@ -25,6 +25,7 @@ the planner optimizes response depth, not question type.
 flowchart TB
     subgraph Startup
         A[Organizer catalog] --> B[Intent-card reconstruction]
+        P[Offline verified-review aggregate] --> B
         B --> C[Category index]
         B --> D[Constraint index]
         B --> E[Per-product hypothesis]
@@ -62,6 +63,7 @@ ProductIntent
   soft preferences: the next two values, or the evaluator's first-value
                     fallback for a sparse card
   searchable catalog text
+  offline popularity weight
   optional catalog statistics for controlled ablations
 ```
 
@@ -79,8 +81,10 @@ The runtime builds these indexes in the same catalog pass:
 - exact reconstructed constraint to product ASINs;
 - selected material and color words to product ASINs.
 
-No public-session labels, review history, embeddings, or external retrieval
-service are loaded.
+The startup join also loads one aggregate `verified_reviews_365d` count per
+`parent_asin`. No individual review, review text, timestamp, user identifier,
+public-session label, private-session label, embedding, or external retrieval
+service is loaded.
 
 ## 2. Conversation as hypothesis inference
 
@@ -181,8 +185,16 @@ Each DP hypothesis is a pair:
 ```
 
 The mask records which values in that product's reconstructed card have already
-been revealed. With the selected uniform prior, surviving products have equal
-belief weight.
+been revealed. Each surviving product carries the smoothed offline belief
+weight:
+
+```text
+w(p) = verified_reviews_365d(p) + 1
+```
+
+The count covers verified Amazon Reviews 2023 records in the 365-day window
+ending at the exclusive `2023-10-01` cutoff. Smoothing keeps a product with no
+observed review possible.
 
 ### Immediate reward
 
@@ -208,8 +220,9 @@ V(t, H) = max over k {
 
 The miss branch removes the recommended prefix. Every remaining product predicts
 the next one-or-two-value response that its own card would produce to `other`.
-Products with the same predicted response form a branch `H_reply`; the DP then
-recurses with updated disclosure masks.
+Products with the same predicted response form a branch `H_reply`; branch and
+immediate-hit probabilities use the sum of `w(p)` in that branch, and the DP
+then recurses with updated disclosure masks.
 
 On the first vague Browsing/Boundary turn, the recurrence also includes the
 released `1/9` conditional probability that a shared “still exploring” message
@@ -218,9 +231,10 @@ belongs to the Boundary scenario. Results are memoized within the response.
 The chosen `k` is therefore dynamic on the exact path and while a non-empty
 focus tier exists. It depends on the candidate ordering, remaining turns,
 requested Top-K, already disclosed values, possible future partitions, and
-whether Boundary behavior can still occur. On the selected uniform path, the
-exact candidate ordering is stable `parent_asin` order; DP optimizes the prefix
-length, not the permutation.
+whether Boundary behavior can still occur. On the selected review-prior path,
+exact candidates are ordered by smoothed review weight, then catalog
+`rating_number`, average rating, and stable `parent_asin`. DP optimizes the
+prefix length for that fixed order; it does not optimize the permutation.
 
 When uncertain NLP produces no focus candidates, the full DP is deliberately
 not applied to an unreliable ordering. The recovery ranker orders by clue
@@ -228,14 +242,26 @@ relevance with `rating_number` as a final tie-break, then uses a conservative
 schedule: one recommendation on turn one, two on turn two, and up to ten from
 turn three onward.
 
-### Why the prior is uniform
+### Why the shipped prior uses offline reviews
 
-Generated targets are sampled uniformly. A global `rating_number` prior was
-implemented and evaluated, but it slightly reduced MRR and the combined score.
-The production inverse-DP belief is therefore uniform. In uncertain NLP
-recovery only, `rating_number` remains a final tie-break among otherwise equal
-catalog matches; it never establishes eligibility or overrides constraint
-relevance.
+The organizer-labeled public development set showed that recent verified-review
+volume was informative for target order: against the identical uniform core,
+the prior moved the target earlier in `117/200` sessions, left `82/200`
+unchanged, and moved one later. Public MTTC improved from `2.7950` to `1.8400`,
+and Technical Score from `0.963350` to `0.983200`.
+
+The effect is distribution-dependent. Generated development improved only
+`0.001026`, while a generated 800-session holdout regressed `0.003854`. Those
+fixtures sample eligible catalog products roughly uniformly, so they do not
+encode the popularity assumption that the prior represents. The final prior was
+selected on the labeled public development set after the team confirmed that
+external data was permitted. No organizer-private session or label was used.
+
+The review count influences exact/focus ordering and expected probability,
+never eligibility: it cannot override category or trusted constraints. On that
+path, catalog `rating_number` and average rating are deterministic tie-breaks
+after review weight. The empty-focus recovery ranker remains clue-first, with
+catalog `rating_number` as its late tie-break.
 
 ## 6. Miss feedback without an explicit click signal
 
@@ -266,7 +292,9 @@ The customer-facing text is a fixed, clear template because the structured
 - Runtime model/API calls: none.
 - Randomness in Agent behavior: none.
 - Catalog bootstrap: pinned URL, SHA-256 verification, and row-count check.
-- Packaging: deterministic file order and timestamps in the source-only ZIP.
+- Bundled prior: 50,000 product counts; checksum, schema, and exact catalog-ASIN
+  coverage are verified during setup; no individual review rows or PII.
+- Packaging: deterministic file order and timestamps in the offline-runtime ZIP.
 - Session isolation: state is keyed by `session_id`.
 
 One Agent instance supports multiple sequential sessions. Concurrent calls need
@@ -277,7 +305,8 @@ an external lock because the in-memory state dictionaries are not synchronized.
 Let `N` be catalog size, `C` the current exact candidate count, and `M` the
 number of hypotheses passed to the DP.
 
-- Startup indexing is linear in catalog size and metadata volume.
+- Prior loading and startup indexing are linear in catalog size and metadata
+  volume.
 - Exact transcript filtering is `O(C)` per turn.
 - Exact fallback phrase lookup is bounded by message length rather than `N`.
 - DP cost depends on the number of surviving hypotheses, reply partitions, and
@@ -294,7 +323,8 @@ Known failure modes include:
 
 - value-level semantic rewrites with no exact catalog phrase;
 - changed private intent-card construction or disclosure order;
-- a target distribution that differs materially from the uniform assumption;
+- a target distribution that differs materially from the review-popularity
+  assumption;
 - useful personalization signals not represented in conversation evidence;
 - large concurrent workloads without an external serving layer.
 

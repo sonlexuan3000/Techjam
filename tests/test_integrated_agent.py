@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import tempfile
@@ -80,9 +81,9 @@ class IntegratedAgentTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def test_official_adapter_uses_uniform_prior_and_finds_exact_target(self) -> None:
+    def test_official_adapter_uses_review_prior_and_finds_exact_target(self) -> None:
         agent = Agent(self.catalog_path)
-        self.assertEqual(agent.prior_field, "uniform")
+        self.assertEqual(agent.prior_field, "verified_reviews_365d")
         agent.reset("session", VALID_PROFILE)
 
         first = agent.respond(
@@ -172,6 +173,27 @@ class IntegratedAgentTest(unittest.TestCase):
             top_k=10,
         )
         self.assertEqual(response["ask_attribute"], "other")
+
+    def test_bundled_review_prior_integrity(self) -> None:
+        prior_path = (
+            Path(__file__).resolve().parents[1]
+            / "submission"
+            / "data"
+            / "review_prior.tsv"
+        )
+        payload = prior_path.read_bytes()
+        self.assertEqual(
+            hashlib.sha256(payload).hexdigest(),
+            "45bc7fa2053e55c2bdef7454c2461886a02ef25d0d25339d5d51a5affaafcfd6",
+        )
+        lines = payload.decode("utf-8").splitlines()
+        self.assertEqual(lines[0], "parent_asin\tverified_reviews_365d")
+        rows = [line.split("\t") for line in lines[1:]]
+        identifiers = [parent_asin for parent_asin, _count in rows]
+        counts = [int(count) for _parent_asin, count in rows]
+        self.assertEqual(len(rows), 50_000)
+        self.assertEqual(len(set(identifiers)), 50_000)
+        self.assertTrue(all(count >= 0 for count in counts))
 
     def test_out_of_contract_top_k_is_defensively_clamped(self) -> None:
         catalog_path = Path(self.temporary_directory.name) / "large-catalog.jsonl"

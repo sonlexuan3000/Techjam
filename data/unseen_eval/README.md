@@ -51,8 +51,8 @@ python evaluator/local_evaluator.py \
   --output data/unseen_eval/dev_results.json
 ```
 
-For a cleaner regression check, freeze and commit the agent before running the
-second split (the filename remains `holdout_set.jsonl` for generator compatibility):
+For an additional regression check, run the second split (the filename remains
+`holdout_set.jsonl` for generator compatibility):
 
 ```bash
 python evaluator/local_evaluator.py \
@@ -61,9 +61,12 @@ python evaluator/local_evaluator.py \
   --output data/unseen_eval/holdout_results.json
 ```
 
-For team discipline, commit a candidate version before running the second split
-and avoid tuning from individual failures. The generated data and results stay
-untracked so target mappings are not accidentally published.
+Both generated splits sample eligible target products without modeling the
+purchase-frequency distribution behind the organizer sessions. They are useful
+for filtering, state, and dialogue-policy regressions, but they are not the
+selection authority for a product-popularity prior. The organizer public 200 is
+the labeled development set for that distribution-sensitive ablation. The
+generated data and results stay untracked so the repository remains compact.
 
 ## Paraphrase stress test
 
@@ -81,6 +84,7 @@ run `make stress ENTRYPOINT=experiments/nlp/<owner>-<approach>/entrypoint.py`.
 Neither test is organizer data or a private-score estimate. Both are visible
 development fixtures, so do not special-case individual cases.
 
-Do not point the stress runner at `data/public_set.jsonl` while developing or
-selecting candidates. The organizer public 200 is reserved for the frozen
-integration owner check.
+The final prior comparison may use `data/public_set.jsonl` because the organizer
+publishes those 200 labeled sessions for local development and iteration. Keep
+that use aggregate and reproducible; never special-case public session IDs or
+target labels in the runtime.

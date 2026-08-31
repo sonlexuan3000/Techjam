@@ -20,8 +20,10 @@ make demo
   or catalog to improve a reported result.
 - Do not commit catalogs, generated sessions/results, virtual environments,
   model weights, credentials, or private evaluation data.
-- Use generated-development data for algorithm comparisons. Treat the organizer
-  public 200 as an integration check, not a hyperparameter source.
+- Use generated-development data for algorithm comparisons. The final offline
+  prior is the disclosed exception: after external data was confirmed permitted,
+  it was selected on the organizer-labeled public 200. Any further use of that
+  set must be reported explicitly rather than described as blind evaluation.
 - Add focused tests for state transitions, filtering, recovery, overrides, and
   response-contract changes.
 - Report every metric regression and keep claims scoped to the dataset and

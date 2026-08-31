@@ -11,6 +11,8 @@ offline using only the Python standard library.
 - API key, model download, GPU, vector database, and network access: not needed.
 - Runtime prompt/completion tokens: `0 / 0`.
 - Organizer input: `data/catalog.jsonl`, or an explicit path passed to `Agent`.
+- Bundled input: `submission/data/review_prior.tsv`, containing one aggregate
+  verified-review count for each catalog product.
 
 `requirements.txt` is intentionally empty apart from an explanatory comment.
 
@@ -38,8 +40,9 @@ python3 submission/smoke.py --catalog data/catalog.jsonl
 make submission-archive
 ```
 
-The last command creates a deterministic source-only ZIP. Generated datasets,
-catalog files, bytecode, virtual environments, and evaluation outputs are not
+The last command creates a deterministic offline-runtime ZIP. It includes the
+compact prior required by the Agent; generated datasets, catalog files, raw
+review rows, bytecode, virtual environments, and evaluation outputs are not
 included.
 
 ## Use the entrypoint
@@ -94,7 +97,9 @@ per-session reward:
 
 If the prefix misses, those products are rejected. Remaining hypotheses are
 partitioned by the next `other` response each product would generate, and the DP
-continues through turn ten. The selected product prior is uniform.
+continues through turn ten. Product probability and fixed candidate order use
+the bundled `verified_reviews_365d + 1` belief; that prior affects ranking and
+planning but never constraint eligibility.
 
 ## Safe language boundary
 
@@ -112,33 +117,38 @@ model; a rewrite such as `not wet in rain -> waterproof` is not guaranteed.
 
 ## Verified results
 
-The final inverse-DP candidate and uniform-prior choice were selected on
-generated-development. The current backend produced this public result after
-the integration freeze:
+The inverse-DP algorithm was selected on generated development. After external
+data was confirmed permitted, the final review prior was selected on the
+organizer-labeled public development set:
 
 | Sessions | HR@10 | MRR | MTTC | Technical Score |
 |---:|---:|---:|---:|---:|
-| 200 public | 1.0000 | 0.997500 | 2.7950 | 0.963350 |
+| 200 public development | 1.0000 | 1.000000 | 1.8400 | 0.983200 |
 
-Candidate selection and post-freeze regression used catalog products with zero
-public-target overlap:
+Against the identical uniform core, the prior improves public Technical Score
+from `0.963350` to `0.983200`: 117 targets move to an earlier turn, 82 stay on
+the same turn, and one moves later.
+
+Generated development and holdout use catalog products with zero public-target
+overlap:
 
 | Evaluation | Sessions | HR@10 | MRR | MTTC | Technical Score |
 |---|---:|---:|---:|---:|---:|
-| Generated development | 2,000 | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
-| Generated regression | 800 | 0.9975 | 0.980420 | 2.5850 | 0.961176 |
+| Generated development | 2,000 | 0.9945 | 0.978687 | 2.6200 | 0.958456 |
+| Generated holdout | 800 | 0.9925 | 0.976574 | 2.5950 | 0.957322 |
 
-These are public/development results, not a private-set estimate. The full
-methodology and limitations are recorded in `REPORT.md`.
+The review prior is `+0.001026` over uniform on generated development but
+`-0.003854` on the roughly uniformly sampled generated holdout. These are
+public/development results, not a private-set estimate. The full methodology
+and limitations are recorded in `REPORT.md`.
 
 ## Runtime profile
 
-Measured on an Apple M4 with the 50,000-product catalog:
+Measured on an Apple M4 with the final prior and 50,000-product catalog:
 
-- startup: `5.75 s`;
-- maximum resident memory: approximately `199 MiB`;
-- 500-turn latency: `30.045 ms` mean, `2.368 ms` median,
-  `136.585 ms` p95, `847.916 ms` maximum;
+- startup: `6.4312 s`;
+- Agent startup RSS increment: approximately `194.80 MiB`;
+- 368-turn latency: `17.527 ms` mean and `74.693 ms` p95;
 - runtime model/API calls, tokens, and marginal model cost: zero.
 
 Timing varies with hardware and candidate-pool size.
@@ -148,6 +158,8 @@ Timing varies with hardware and candidate-pool size.
 ```text
 submission/
   agent.py                         competition entrypoint
+  data/review_prior.tsv            bundled product-level popularity prior
+  data/README.md                    prior provenance and reproduction
   smoke.py                         standalone catalog smoke test
   requirements.txt                zero-dependency declaration
   README.md                        setup and runtime overview
@@ -160,7 +172,9 @@ submission/
 ## Limitations
 
 - The policy assumes the released card construction, disclosure order, scenario
-  model, score function, and ten-turn horizon.
+  model, score function, review-popularity prior, and ten-turn horizon.
+- The public development set was used to select the prior, and the generated
+  holdout moved in the opposite direction. Neither predicts the private score.
 - General semantic-value paraphrases remain weak. Recovery prevents an
   uncertain parse from redefining eligibility but cannot guarantee early rank.
 - `user_profile` is stored per session but is not used by the ranking policy.

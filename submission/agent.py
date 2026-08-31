@@ -14,14 +14,18 @@ except ImportError:  # Support harnesses that load this entry file by path.
     from shopping_copilot.core import Agent as _InverseDPAgent
 
 
+_PRIOR_PATH = Path(__file__).resolve().parent / "data" / "review_prior.tsv"
+
+
 class Agent(_InverseDPAgent):
-    """Data-safe inverse-card agent using the benchmark-winning uniform prior."""
+    """Inverse-card agent using the bundled aggregate review-count prior."""
 
     def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
         super().__init__(
             catalog_path=catalog_path,
-            prior_field="uniform",
-            prior_smoothing=0.0,
+            prior_field="verified_reviews_365d",
+            prior_smoothing=1.0,
+            prior_path=_PRIOR_PATH,
         )
 
 

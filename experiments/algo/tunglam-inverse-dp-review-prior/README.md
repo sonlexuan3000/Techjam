@@ -1,12 +1,11 @@
-# Algorithm candidate: `tunglam-inverse-dp` (data-safe revision)
+# Algorithm candidate: `tunglam-inverse-dp-review-prior`
 
 - Original owner: Tung Lam Nguyen
 - Original commit: `044c2fa`
-- Reviewed base: `c5987f5`
+- Safety-review commit: `db9aff5`
 - Status: selected and integrated into `starter.agent.Agent`
-- Frozen pre-integration source commit: `6ff9b1e`
-- Primary entrypoint: `entrypoint.py` (uniform prior)
-- Optional ablation: `entrypoint_rating_number.py`
+- Primary entrypoint: `entrypoint.py` (offline verified-review prior)
+- Ablations: `entrypoint_uniform.py`, `entrypoint_rating_number.py`
 
 ## What is preserved
 
@@ -26,10 +25,10 @@ The integration keeps the original high-value pieces:
 - finite-horizon DP over rank reward, future disclosures, Boundary probability,
   ten turns, and the requested Top-K cap.
 
-The primary inverse-DP belief prior is uniform because generated targets are
-sampled uniformly and this variant performed better than the global catalog
-`rating_number` prior. The uncertain NLP recovery ranker retains the existing
-catalog rating count only as a tie-break among equally relevant matches.
+The primary inverse-DP belief weight is `verified_reviews_365d + 1`. Review
+volume controls the fixed product order and the probability mass used by the DP;
+it never establishes eligibility. Catalog rating count and average rating are
+deterministic tie-breaks after review weight.
 
 ## Safe NLP boundary
 
@@ -57,21 +56,26 @@ unresolved recovery-only input unless another component resolves the meaning.
 
 ## Data policy
 
-The original proposal bundled `verified_reviews_365d` derived from Amazon
-Reviews 2023. Review found that the source has no explicit redistribution
-license and that its purchase-review events overlap the source family used to
-construct evaluation targets. The gain over uniform was only `0.001026` on the
-generated dev split and its paired uncertainty interval included zero.
+The shipped `submission/data/review_prior.tsv` contains one product-level count
+for each of the 50,000 catalog ASINs: verified Amazon Reviews 2023 records in the
+365 days ending at the exclusive `2023-10-01` cutoff. Runtime weight is count
+plus one. The file contains no user identifier, review text, timestamp,
+individual review row, or organizer session label and is used entirely offline.
 
-That asset, its extractors, and runtime support were removed. The retained
-candidate uses only fields already present in the organizer-supplied catalog.
-The original experiment remains recoverable from Git history.
+After the team confirmed that external data was permitted, the prior was
+selected on the organizer-labeled public development set. The full-source
+aggregate may include events from periods later treated as held out, so the
+documentation does not claim temporal leakage-free evaluation. Exact source,
+row counts, checksums, extraction commands, public gain, and generated-holdout
+regression are all retained for auditability.
 
 ## Reproduction
 
-The commands below now exercise a compatibility alias to the integrated source.
-Use commit `6ff9b1e` to reproduce the isolated candidate exactly as it was
-reviewed and selected; the metrics table is the preserved selection record.
+The commands below exercise a compatibility alias to the integrated source.
+Commit `044c2fa` preserves the original isolated review-prior candidate;
+`db9aff5` records the later safety review that temporarily selected uniform
+while data permission was unresolved. The current entrypoint restores the
+review prior after that permission was confirmed.
 
 From the repository root:
 
@@ -97,42 +101,58 @@ make unseen-data
   --entrypoint experiments/algo/tunglam-inverse-dp-review-prior/entrypoint.py
 ```
 
-Do not use the organizer public 200 to select or tune this candidate. The
-results below use only the deterministic `techjam-unseen-v1` generated-dev
-split.
+The generated results below use the deterministic `techjam-unseen-v1` split.
+They drove algorithm selection and remain a distribution diagnostic; the final
+prior itself was selected on the labeled public 200 and is reported separately.
 
 ## Results
 
 | Generated-dev variant | HR@10 | MRR | MTTC | Technical score |
 |---|---:|---:|---:|---:|
 | Team baseline | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
-| Uniform inverse-DP (primary) | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
-| Catalog `rating_number` inverse-DP | 0.9935 | 0.975782 | 2.6860 | 0.955765 |
-| Removed external review prior | 0.9945 | 0.978687 | 2.6200 | 0.958456 |
+| Uniform inverse-DP | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
+| Catalog `rating_number` inverse-DP | 0.9935 | 0.974768 | 2.6890 | 0.955400 |
+| **Offline review prior (shipped)** | **0.9945** | **0.978687** | **2.6200** | **0.958456** |
 
-The primary candidate improves the generated technical score by `0.042369`
-over the team baseline while avoiding external data.
+The shipped candidate improves generated Technical Score by `0.043395` over the
+team baseline and by `0.001026` over uniform.
 
-Scenario results for the primary candidate:
+Scenario results for the shipped prior:
 
 | Scenario | Sessions | HR@10 | MRR | MTTC |
 |---|---:|---:|---:|---:|
-| Boundary | 100 | 1.0000 | 0.978000 | 3.4900 |
-| Browsing | 800 | 0.9950 | 0.976786 | 2.5550 |
-| Buying | 800 | 0.99125 | 0.976902 | 2.15625 |
-| Intent Override | 300 | 0.993333 | 0.979500 | 3.776667 |
+| Boundary | 100 | 0.9900 | 0.969167 | 3.5600 |
+| Browsing | 800 | 0.99625 | 0.980649 | 2.6150 |
+| Buying | 800 | 0.99125 | 0.976026 | 2.0800 |
+| Intent Override | 300 | 1.000000 | 0.983722 | 3.760000 |
 
-Verification completed without running the organizer public set:
+Final prior A/B:
 
-- shared suite: `39/39` passed;
-- candidate suite: `16/16` passed, including evaluator card/category parity;
+| Evaluation / prior | Sessions | HR@10 | MRR | MTTC | Technical score |
+|---|---:|---:|---:|---:|---:|
+| Public / uniform | 200 | 1.0000 | 0.997500 | 2.7950 | 0.963350 |
+| Public / catalog `rating_number` | 200 | 1.0000 | 1.000000 | 2.0050 | 0.979900 |
+| **Public / review prior** | **200** | **1.0000** | **1.000000** | **1.8400** | **0.983200** |
+| Generated holdout / uniform | 800 | 0.9975 | 0.980420 | 2.5850 | 0.961176 |
+| **Generated holdout / review prior** | **800** | **0.9925** | **0.976574** | **2.5950** | **0.957322** |
+
+On public development the review prior is `+0.019850`; on the roughly uniform
+generated holdout it is `-0.003854`. Paired public turns are 117 earlier, 82
+unchanged, and one later. No private-session result is claimed.
+
+Final integration verification recorded:
+
+- shared suite: `45/45` passed;
+- inverse-DP suite: `21/21` passed, including prior schema, smoothing, and
+  hard-filter invariants;
 - reconstructed cards/categories match the evaluator for all `50,000` catalog products;
-- exact generated-dev aggregate matches the pre-integration uniform ablation;
-- deterministic wrapper stress also scores `0.957430` with identical HR/MRR/MTTC;
+- the integrated review-prior adapter matches the original `044c2fa` candidate
+  session-for-session across public 200, generated development, and generated
+  holdout;
+- final-prior wrapper stress scores `0.958456` with identical HR/MRR/MTTC;
 - all `2,000/2,000` exact-vs-wrapper session summaries match;
-- pre-integration candidate startup on an Apple M4: about `5.37 s`, maximum
-  RSS about `197 MiB` (the packaged integration is measured separately in
-  `submission/REPORT.md`);
+- packaged runtime performance is measured separately in
+  `submission/REPORT.md`;
 - runtime API/model/token usage: zero.
 
 ## Limitations
@@ -146,13 +166,14 @@ Verification completed without running the organizer public set:
   category, paired override/negation, and semantic-value coverage still need a
   separate NLP iteration. The recovery tier prevents those misses from becoming
   irreversible hard-filter errors.
-- Uniform target probability is an assumption. The catalog-only
-  `rating_number` adapter is retained for controlled comparison.
+- Review popularity is a distribution assumption. The generated 800-session
+  holdout regresses `0.003854` against uniform, while the labeled public set
+  improves `0.019850`; neither reveals private performance.
 
 ## Files
 
-- `entrypoint.py`: primary uniform-prior adapter.
-- `entrypoint_uniform.py`: compatibility alias for earlier benchmark commands.
+- `entrypoint.py`: primary offline-review-prior adapter.
+- `entrypoint_uniform.py`: uniform-belief ablation.
 - `entrypoint_rating_number.py`: organizer-catalog-only prior ablation.
 - `tunglam_inverse_dp/agent.py`: compatibility import retained for historical
   benchmark commands.

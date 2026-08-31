@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a deterministic source-only archive of the submission bundle."""
+"""Build a deterministic offline-runtime archive of the submission bundle."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ REQUIRED_FILES = {
     "README.md",
     "REPORT.md",
     "agent.py",
+    "data/README.md",
+    "data/review_prior.tsv",
     "requirements.txt",
     "smoke.py",
     "src/shopping_copilot/core.py",
@@ -22,7 +24,12 @@ REQUIRED_FILES = {
     "src/shopping_copilot/parser.py",
     "src/shopping_copilot/preprocessing.py",
 }
-ALLOWED_SUFFIXES = {".md", ".py", ".txt"}
+ALLOWED_SUFFIXES = {".md", ".py", ".tsv", ".txt"}
+EXPECTED_FILE_SHA256 = {
+    "data/review_prior.tsv": (
+        "45bc7fa2053e55c2bdef7454c2461886a02ef25d0d25339d5d51a5affaafcfd6"
+    ),
+}
 
 
 def bundle_files() -> list[Path]:
@@ -37,6 +44,14 @@ def bundle_files() -> list[Path]:
     missing = REQUIRED_FILES - relative
     if missing:
         raise RuntimeError(f"submission bundle is missing required files: {sorted(missing)}")
+    for relative_path, expected_digest in EXPECTED_FILE_SHA256.items():
+        payload = (SUBMISSION_ROOT / relative_path).read_bytes()
+        actual_digest = hashlib.sha256(payload).hexdigest()
+        if actual_digest != expected_digest:
+            raise RuntimeError(
+                f"submission asset checksum mismatch for {relative_path}: "
+                f"{actual_digest} != {expected_digest}"
+            )
     return files
 
 
