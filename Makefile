@@ -4,7 +4,8 @@ UNSEEN_SEED ?= techjam-unseen-v1
 UNSEEN_DIR := data/unseen_eval
 ENTRYPOINT ?=
 
-.PHONY: help setup data test demo submission-archive evaluate check unseen-data evaluate-unseen-dev \
+.PHONY: help setup data test demo submission-archive frontend evaluate check unseen-data \
+	evaluate-unseen-dev \
 	evaluate-candidate-dev evaluate-unseen-holdout human-stress stress benchmark \
 	integration-check
 
@@ -13,6 +14,7 @@ help:
 	@echo "make test                     Run fast unit/contract tests"
 	@echo "make demo                     Run one deterministic multi-turn catalog demo"
 	@echo "make submission-archive       Build the minimal offline submission zip"
+	@echo "make frontend                 Run the local session conversation viewer"
 	@echo "make evaluate                 Evaluate on organizer public 200 development set"
 	@echo "make unseen-data              Reproduce shared 2,000 dev + 800 regression sessions"
 	@echo "make evaluate-unseen-dev      Evaluate the generated shared dev split"
@@ -44,6 +46,9 @@ demo: data
 
 submission-archive:
 	$(PYTHON) scripts/build_submission_archive.py
+
+frontend: data
+	$(VENV_PYTHON) frontend/server.py
 
 evaluate: data
 	@echo "Running organizer public 200 development evaluation."

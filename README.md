@@ -173,6 +173,16 @@ Reproduce the disclosed organizer public development result with:
 make integration-check
 ```
 
+To choose a public session and watch the agent/customer exchange as an animated
+chat, run:
+
+```bash
+make frontend
+```
+
+Then open `http://localhost:8787`. The viewer uses the same customer simulator
+and stopping rules as the local evaluator; see [frontend/README.md](frontend/README.md).
+
 ## Deterministic demo trace
 
 The default `make demo` target starts inside a non-trivial category and normally

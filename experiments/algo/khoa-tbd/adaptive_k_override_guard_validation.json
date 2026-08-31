@@ -1,0 +1,625 @@
+{
+  "configuration": {
+    "catalog": "data/catalog.jsonl",
+    "dataset": "data/unseen_eval/dev_set.jsonl",
+    "cache": "experiments/algo/khoa-tbd/adaptive_k_trajectories.jsonl.gz",
+    "model_out": "/tmp/khoa_override_sweep_model.json",
+    "output": "experiments/algo/khoa-tbd/adaptive_k_override_guard_validation.json",
+    "seed": 20260830,
+    "evaluation_scope": "heldout",
+    "workers": 4,
+    "limit": 0,
+    "epochs": 80,
+    "batch_size": 2048,
+    "learning_rate": 0.02,
+    "rank_l2": 0.0001,
+    "continuation_l2": 1.0,
+    "q_mode": "bellman",
+    "override_guard_sweep": true,
+    "override_guard_thresholds": [
+      null,
+      0.0,
+      0.0025,
+      0.005,
+      0.01,
+      0.02,
+      0.03,
+      0.05
+    ],
+    "skip_oracle": true,
+    "log_limit": 0,
+    "force_cache": false,
+    "k_values": [
+      1,
+      3,
+      5,
+      10
+    ],
+    "q_equation": "sum_r<=K p(r|s)*U(t,r) + p(R>K|s)*V_next(s,K)"
+  },
+  "split_counts": {
+    "train": 1400,
+    "calibration": 300,
+    "heldout": 300
+  },
+  "model": {
+    "seed": 20260830,
+    "dataset": {
+      "path": "/Users/chalas_dk/CodeProject/Techjam/data/unseen_eval/dev_set.jsonl",
+      "size": 730616,
+      "mtime_ns": 1787985179671853965
+    },
+    "catalog": {
+      "path": "/Users/chalas_dk/CodeProject/Techjam/data/catalog.jsonl",
+      "size": 60546327,
+      "mtime_ns": 1787985167938953121
+    },
+    "split_counts": {
+      "train": 1400,
+      "calibration": 300,
+      "heldout": 300
+    },
+    "rank_training_rows": 12978,
+    "continuation_training_rows": 12523,
+    "feature_count": 66,
+    "rank_heads": [
+      1,
+      3,
+      5,
+      10
+    ],
+    "continuation_head": "shared_default",
+    "q_mode": "bellman"
+  },
+  "calibration": {
+    "rows": 2715,
+    "p_rank_le_1_brier": 0.053012,
+    "p_rank_le_1_predicted_mean": 0.258713,
+    "p_rank_le_1_observed_mean": 0.261878,
+    "p_rank_le_3_brier": 0.068711,
+    "p_rank_le_3_predicted_mean": 0.36025,
+    "p_rank_le_3_observed_mean": 0.360589,
+    "p_rank_le_5_brier": 0.073208,
+    "p_rank_le_5_predicted_mean": 0.406436,
+    "p_rank_le_5_observed_mean": 0.405525,
+    "p_rank_le_10_brier": 0.088761,
+    "p_rank_le_10_predicted_mean": 0.472963,
+    "p_rank_le_10_observed_mean": 0.469613,
+    "mean_binary_log_loss": 0.237207
+  },
+  "override_guard_validation_sweep": {
+    "data_scope": "calibration_split_only",
+    "selection_metric": "validation TechnicalScore; HitRate, MRR, MTTC, then smaller guard",
+    "heldout_used_for_selection": false,
+    "threshold_order": [
+      "none",
+      "0",
+      "0.0025",
+      "0.005",
+      "0.01",
+      "0.02",
+      "0.03",
+      "0.05"
+    ],
+    "thresholds": {
+      "none": {
+        "threshold": null,
+        "overall": {
+          "sample_count": 300,
+          "hit_rate_at_10": 0.966667,
+          "mrr": 0.840743,
+          "mttc": 3.1,
+          "efficiency": 0.79,
+          "technical_score": 0.893556
+        },
+        "by_scenario": {
+          "boundary": {
+            "sample_count": 15,
+            "hit_rate_at_10": 1.0,
+            "mrr": 0.907407,
+            "mttc": 4.0,
+            "efficiency": 0.7,
+            "technical_score": 0.912222
+          },
+          "browsing": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.958333,
+            "mrr": 0.82876,
+            "mttc": 3.15,
+            "efficiency": 0.785,
+            "technical_score": 0.884795
+          },
+          "buying": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.966667,
+            "mrr": 0.85494,
+            "mttc": 2.591667,
+            "efficiency": 0.840833,
+            "technical_score": 0.907982
+          },
+          "intent_override": {
+            "sample_count": 45,
+            "hit_rate_at_10": 0.977778,
+            "mrr": 0.812619,
+            "mttc": 4.022222,
+            "efficiency": 0.697778,
+            "technical_score": 0.87223
+          }
+        },
+        "k_counts": {
+          "1": 481,
+          "3": 133,
+          "5": 73,
+          "10": 233
+        },
+        "guard_diagnostics": {
+          "override_turn_decisions": 45,
+          "base_k_below_10_decisions": 28,
+          "fallback_turns": 0,
+          "fallback_sessions": 0,
+          "fallback_rate_when_eligible": 0.0,
+          "eligible_margin_mean": 0.01168097,
+          "eligible_margin_min": 0.0,
+          "eligible_margin_max": 0.13343884
+        },
+        "technical_score_delta_vs_no_guard": 0.0
+      },
+      "0": {
+        "threshold": 0.0,
+        "overall": {
+          "sample_count": 300,
+          "hit_rate_at_10": 0.966667,
+          "mrr": 0.840743,
+          "mttc": 3.1,
+          "efficiency": 0.79,
+          "technical_score": 0.893556
+        },
+        "by_scenario": {
+          "boundary": {
+            "sample_count": 15,
+            "hit_rate_at_10": 1.0,
+            "mrr": 0.907407,
+            "mttc": 4.0,
+            "efficiency": 0.7,
+            "technical_score": 0.912222
+          },
+          "browsing": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.958333,
+            "mrr": 0.82876,
+            "mttc": 3.15,
+            "efficiency": 0.785,
+            "technical_score": 0.884795
+          },
+          "buying": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.966667,
+            "mrr": 0.85494,
+            "mttc": 2.591667,
+            "efficiency": 0.840833,
+            "technical_score": 0.907982
+          },
+          "intent_override": {
+            "sample_count": 45,
+            "hit_rate_at_10": 0.977778,
+            "mrr": 0.812619,
+            "mttc": 4.022222,
+            "efficiency": 0.697778,
+            "technical_score": 0.87223
+          }
+        },
+        "k_counts": {
+          "1": 466,
+          "3": 132,
+          "5": 70,
+          "10": 252
+        },
+        "guard_diagnostics": {
+          "override_turn_decisions": 45,
+          "base_k_below_10_decisions": 28,
+          "fallback_turns": 19,
+          "fallback_sessions": 19,
+          "fallback_rate_when_eligible": 0.678571,
+          "eligible_margin_mean": 0.01168097,
+          "eligible_margin_min": 0.0,
+          "eligible_margin_max": 0.13343884
+        },
+        "technical_score_delta_vs_no_guard": 0.0
+      },
+      "0.0025": {
+        "threshold": 0.0025,
+        "overall": {
+          "sample_count": 300,
+          "hit_rate_at_10": 0.966667,
+          "mrr": 0.840743,
+          "mttc": 3.1,
+          "efficiency": 0.79,
+          "technical_score": 0.893556
+        },
+        "by_scenario": {
+          "boundary": {
+            "sample_count": 15,
+            "hit_rate_at_10": 1.0,
+            "mrr": 0.907407,
+            "mttc": 4.0,
+            "efficiency": 0.7,
+            "technical_score": 0.912222
+          },
+          "browsing": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.958333,
+            "mrr": 0.82876,
+            "mttc": 3.15,
+            "efficiency": 0.785,
+            "technical_score": 0.884795
+          },
+          "buying": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.966667,
+            "mrr": 0.85494,
+            "mttc": 2.591667,
+            "efficiency": 0.840833,
+            "technical_score": 0.907982
+          },
+          "intent_override": {
+            "sample_count": 45,
+            "hit_rate_at_10": 0.977778,
+            "mrr": 0.812619,
+            "mttc": 4.022222,
+            "efficiency": 0.697778,
+            "technical_score": 0.87223
+          }
+        },
+        "k_counts": {
+          "1": 465,
+          "3": 130,
+          "5": 69,
+          "10": 256
+        },
+        "guard_diagnostics": {
+          "override_turn_decisions": 45,
+          "base_k_below_10_decisions": 28,
+          "fallback_turns": 23,
+          "fallback_sessions": 23,
+          "fallback_rate_when_eligible": 0.821429,
+          "eligible_margin_mean": 0.01168097,
+          "eligible_margin_min": 0.0,
+          "eligible_margin_max": 0.13343884
+        },
+        "technical_score_delta_vs_no_guard": 0.0
+      },
+      "0.005": {
+        "threshold": 0.005,
+        "overall": {
+          "sample_count": 300,
+          "hit_rate_at_10": 0.966667,
+          "mrr": 0.840743,
+          "mttc": 3.1,
+          "efficiency": 0.79,
+          "technical_score": 0.893556
+        },
+        "by_scenario": {
+          "boundary": {
+            "sample_count": 15,
+            "hit_rate_at_10": 1.0,
+            "mrr": 0.907407,
+            "mttc": 4.0,
+            "efficiency": 0.7,
+            "technical_score": 0.912222
+          },
+          "browsing": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.958333,
+            "mrr": 0.82876,
+            "mttc": 3.15,
+            "efficiency": 0.785,
+            "technical_score": 0.884795
+          },
+          "buying": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.966667,
+            "mrr": 0.85494,
+            "mttc": 2.591667,
+            "efficiency": 0.840833,
+            "technical_score": 0.907982
+          },
+          "intent_override": {
+            "sample_count": 45,
+            "hit_rate_at_10": 0.977778,
+            "mrr": 0.812619,
+            "mttc": 4.022222,
+            "efficiency": 0.697778,
+            "technical_score": 0.87223
+          }
+        },
+        "k_counts": {
+          "1": 465,
+          "3": 130,
+          "5": 69,
+          "10": 256
+        },
+        "guard_diagnostics": {
+          "override_turn_decisions": 45,
+          "base_k_below_10_decisions": 28,
+          "fallback_turns": 23,
+          "fallback_sessions": 23,
+          "fallback_rate_when_eligible": 0.821429,
+          "eligible_margin_mean": 0.01168097,
+          "eligible_margin_min": 0.0,
+          "eligible_margin_max": 0.13343884
+        },
+        "technical_score_delta_vs_no_guard": 0.0
+      },
+      "0.01": {
+        "threshold": 0.01,
+        "overall": {
+          "sample_count": 300,
+          "hit_rate_at_10": 0.966667,
+          "mrr": 0.838077,
+          "mttc": 3.093333,
+          "efficiency": 0.790667,
+          "technical_score": 0.89289
+        },
+        "by_scenario": {
+          "boundary": {
+            "sample_count": 15,
+            "hit_rate_at_10": 1.0,
+            "mrr": 0.907407,
+            "mttc": 4.0,
+            "efficiency": 0.7,
+            "technical_score": 0.912222
+          },
+          "browsing": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.958333,
+            "mrr": 0.82876,
+            "mttc": 3.15,
+            "efficiency": 0.785,
+            "technical_score": 0.884795
+          },
+          "buying": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.966667,
+            "mrr": 0.85494,
+            "mttc": 2.591667,
+            "efficiency": 0.840833,
+            "technical_score": 0.907982
+          },
+          "intent_override": {
+            "sample_count": 45,
+            "hit_rate_at_10": 0.977778,
+            "mrr": 0.794841,
+            "mttc": 3.977778,
+            "efficiency": 0.702222,
+            "technical_score": 0.867786
+          }
+        },
+        "k_counts": {
+          "1": 464,
+          "3": 129,
+          "5": 69,
+          "10": 256
+        },
+        "guard_diagnostics": {
+          "override_turn_decisions": 45,
+          "base_k_below_10_decisions": 28,
+          "fallback_turns": 25,
+          "fallback_sessions": 25,
+          "fallback_rate_when_eligible": 0.892857,
+          "eligible_margin_mean": 0.01168097,
+          "eligible_margin_min": 0.0,
+          "eligible_margin_max": 0.13343884
+        },
+        "technical_score_delta_vs_no_guard": -0.000666
+      },
+      "0.02": {
+        "threshold": 0.02,
+        "overall": {
+          "sample_count": 300,
+          "hit_rate_at_10": 0.966667,
+          "mrr": 0.838077,
+          "mttc": 3.093333,
+          "efficiency": 0.790667,
+          "technical_score": 0.89289
+        },
+        "by_scenario": {
+          "boundary": {
+            "sample_count": 15,
+            "hit_rate_at_10": 1.0,
+            "mrr": 0.907407,
+            "mttc": 4.0,
+            "efficiency": 0.7,
+            "technical_score": 0.912222
+          },
+          "browsing": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.958333,
+            "mrr": 0.82876,
+            "mttc": 3.15,
+            "efficiency": 0.785,
+            "technical_score": 0.884795
+          },
+          "buying": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.966667,
+            "mrr": 0.85494,
+            "mttc": 2.591667,
+            "efficiency": 0.840833,
+            "technical_score": 0.907982
+          },
+          "intent_override": {
+            "sample_count": 45,
+            "hit_rate_at_10": 0.977778,
+            "mrr": 0.794841,
+            "mttc": 3.977778,
+            "efficiency": 0.702222,
+            "technical_score": 0.867786
+          }
+        },
+        "k_counts": {
+          "1": 464,
+          "3": 129,
+          "5": 69,
+          "10": 256
+        },
+        "guard_diagnostics": {
+          "override_turn_decisions": 45,
+          "base_k_below_10_decisions": 28,
+          "fallback_turns": 25,
+          "fallback_sessions": 25,
+          "fallback_rate_when_eligible": 0.892857,
+          "eligible_margin_mean": 0.01168097,
+          "eligible_margin_min": 0.0,
+          "eligible_margin_max": 0.13343884
+        },
+        "technical_score_delta_vs_no_guard": -0.000666
+      },
+      "0.03": {
+        "threshold": 0.03,
+        "overall": {
+          "sample_count": 300,
+          "hit_rate_at_10": 0.966667,
+          "mrr": 0.838077,
+          "mttc": 3.093333,
+          "efficiency": 0.790667,
+          "technical_score": 0.89289
+        },
+        "by_scenario": {
+          "boundary": {
+            "sample_count": 15,
+            "hit_rate_at_10": 1.0,
+            "mrr": 0.907407,
+            "mttc": 4.0,
+            "efficiency": 0.7,
+            "technical_score": 0.912222
+          },
+          "browsing": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.958333,
+            "mrr": 0.82876,
+            "mttc": 3.15,
+            "efficiency": 0.785,
+            "technical_score": 0.884795
+          },
+          "buying": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.966667,
+            "mrr": 0.85494,
+            "mttc": 2.591667,
+            "efficiency": 0.840833,
+            "technical_score": 0.907982
+          },
+          "intent_override": {
+            "sample_count": 45,
+            "hit_rate_at_10": 0.977778,
+            "mrr": 0.794841,
+            "mttc": 3.977778,
+            "efficiency": 0.702222,
+            "technical_score": 0.867786
+          }
+        },
+        "k_counts": {
+          "1": 464,
+          "3": 129,
+          "5": 69,
+          "10": 256
+        },
+        "guard_diagnostics": {
+          "override_turn_decisions": 45,
+          "base_k_below_10_decisions": 28,
+          "fallback_turns": 25,
+          "fallback_sessions": 25,
+          "fallback_rate_when_eligible": 0.892857,
+          "eligible_margin_mean": 0.01168097,
+          "eligible_margin_min": 0.0,
+          "eligible_margin_max": 0.13343884
+        },
+        "technical_score_delta_vs_no_guard": -0.000666
+      },
+      "0.05": {
+        "threshold": 0.05,
+        "overall": {
+          "sample_count": 300,
+          "hit_rate_at_10": 0.966667,
+          "mrr": 0.83641,
+          "mttc": 3.09,
+          "efficiency": 0.791,
+          "technical_score": 0.892456
+        },
+        "by_scenario": {
+          "boundary": {
+            "sample_count": 15,
+            "hit_rate_at_10": 1.0,
+            "mrr": 0.907407,
+            "mttc": 4.0,
+            "efficiency": 0.7,
+            "technical_score": 0.912222
+          },
+          "browsing": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.958333,
+            "mrr": 0.82876,
+            "mttc": 3.15,
+            "efficiency": 0.785,
+            "technical_score": 0.884795
+          },
+          "buying": {
+            "sample_count": 120,
+            "hit_rate_at_10": 0.966667,
+            "mrr": 0.85494,
+            "mttc": 2.591667,
+            "efficiency": 0.840833,
+            "technical_score": 0.907982
+          },
+          "intent_override": {
+            "sample_count": 45,
+            "hit_rate_at_10": 0.977778,
+            "mrr": 0.78373,
+            "mttc": 3.955556,
+            "efficiency": 0.704444,
+            "technical_score": 0.864897
+          }
+        },
+        "k_counts": {
+          "1": 462,
+          "3": 129,
+          "5": 69,
+          "10": 257
+        },
+        "guard_diagnostics": {
+          "override_turn_decisions": 45,
+          "base_k_below_10_decisions": 28,
+          "fallback_turns": 26,
+          "fallback_sessions": 26,
+          "fallback_rate_when_eligible": 0.928571,
+          "eligible_margin_mean": 0.01168097,
+          "eligible_margin_min": 0.0,
+          "eligible_margin_max": 0.13343884
+        },
+        "technical_score_delta_vs_no_guard": -0.0011
+      }
+    },
+    "selected": {
+      "label": "none",
+      "threshold": null,
+      "overall": {
+        "sample_count": 300,
+        "hit_rate_at_10": 0.966667,
+        "mrr": 0.840743,
+        "mttc": 3.1,
+        "efficiency": 0.79,
+        "technical_score": 0.893556
+      },
+      "guard_diagnostics": {
+        "override_turn_decisions": 45,
+        "base_k_below_10_decisions": 28,
+        "fallback_turns": 0,
+        "fallback_sessions": 0,
+        "fallback_rate_when_eligible": 0.0,
+        "eligible_margin_mean": 0.01168097,
+        "eligible_margin_min": 0.0,
+        "eligible_margin_max": 0.13343884
+      }
+    }
+  }
+}
