@@ -12,6 +12,7 @@ before submission in case the organizer posts an amendment.
 - [ ] Confirm `submission/agent.py` is the intended competition entrypoint.
 - [ ] Run `git status` and review every tracked change.
 - [ ] Run the release commands below and keep their output.
+- [ ] Confirm the README contribution table matches each member's actual work.
 - [ ] Commit the final state and record the full commit SHA.
 - [ ] **Manual:** make the GitHub repository public and verify the clone command
   works in a signed-out browser.

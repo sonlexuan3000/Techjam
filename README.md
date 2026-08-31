@@ -370,6 +370,19 @@ docs/FINAL_SUBMISSION_CHECKLIST.md  code-freeze and Devpost release checklist
 - One Agent instance supports multiple sequential sessions but requires an
   external lock if embedded in a concurrent server.
 
+## Team member contributions
+
+| Team member | Primary ownership | Concrete contribution |
+|---|---|---|
+| **Nguyễn Tuệ Vy** | Product story and presentation | Owns the end-to-end demo narrative, three-minute video production, and final Devpost/release QA. |
+| **Vũ Đăng Khoa** | Evaluation studio and adaptive-policy research | Built the shipped conversation viewer, target-free diagnostics, and playback; implemented and benchmarked the adaptive-K experiment. |
+| **Lưu Phúc Vinh** | Alternative recommendation policy | Implemented and tested the conservative dynamic-K candidate, providing an independently runnable policy for shortlist comparison and regression review. |
+| **Lê Xuân Sơn** | NLP, integration, and release engineering | Built the wrapper-tolerant parser and evaluation harness; integrated the production backend, offline prior, documentation, CI, and reproducible archive. |
+| **Nguyễn Tùng Lâm** | Core retrieval and planning | Designed and implemented the inverse-card candidate filter, constraint state, finite-horizon DP policy, preprocessing, prior tooling, and core tests later productionized for submission. |
+
+The adaptive-K and conservative dynamic-K implementations are documented
+experiments; the submitted Agent uses the integrated inverse-DP backend.
+
 ## Submission material
 
 - [Standalone backend instructions](submission/README.md)
