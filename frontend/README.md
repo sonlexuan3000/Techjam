@@ -39,7 +39,7 @@ Optional flags are `--host`, `--port`, `--catalog`, and `--dataset`.
 - The returned transcript contains the assistant's text, requested attribute,
   catalog-enriched recommendation cards, and a compact target-free candidate
   funnel for every turn: previous pool, remaining candidates, products shown,
-  and up to two latest grounded evidence values. NLP recovery and an active
+  and up to two matched grounded evidence values. NLP recovery and an active
   intent-override phase receive a small badge; deeper diagnostics stay in the
   technical documentation instead of crowding the video view.
 - Playback shows a left-aligned customer typing indicator before each message,

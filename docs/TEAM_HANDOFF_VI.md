@@ -10,7 +10,8 @@ code production trước khi công bố.
 
 ## 1. Bản tóm tắt 30 giây
 
-**Tên sản phẩm:** InverseCart  
+**Tên sản phẩm:** InverseCart
+
 **Track:** TikTok TechJam 2026, Track 4 — Shopping Copilot
 
 Một câu nên dùng xuyên suốt:

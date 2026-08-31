@@ -10,7 +10,8 @@ this document, verify it against [`final_results.json`](final_results.json),
 
 ## 1. The 30-second summary
 
-**Project name:** InverseCart  
+**Project name:** InverseCart
+
 **Track:** TikTok TechJam 2026, Track 4 — Shopping Copilot
 
 Use this sentence consistently:

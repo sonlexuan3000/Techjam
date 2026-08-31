@@ -51,8 +51,8 @@ The required Buying, Browsing, Intent Override, and Boundary scenarios are
 handled through the official `Agent.reset` and `Agent.respond` interface.
 
 An optional local evaluation studio replays any public session as an animated
-conversation. Each turn shows a target-free candidate funnel, the newest
-grounded evidence, and the number of products returned. Target badges are added
+conversation. Each turn shows a target-free candidate funnel, up to two matched
+evidence values, and the number of products returned. Target badges are added
 by the evaluator only after the Agent response and are never Agent input.
 
 ## How we built it

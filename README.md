@@ -196,7 +196,7 @@ make frontend
 
 Then open `http://localhost:8787`. The viewer uses the same customer simulator
 and stopping rules as the local evaluator. Each turn shows a compact candidate
-funnel, the latest grounded evidence, and how many products the Agent returned.
+funnel, up to two matched evidence values, and how many products the Agent returned.
 The hidden target is compared only after `Agent.respond` returns, so target
 badges and hit metrics are evaluator-side overlays rather than Agent inputs.
 See [frontend/README.md](frontend/README.md).
