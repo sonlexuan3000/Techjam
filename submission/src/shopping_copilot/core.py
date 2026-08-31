@@ -198,15 +198,25 @@ class Agent:
         catalog_path: str | Path = "data/catalog.jsonl",
         prior_field: str = "uniform",
         prior_smoothing: float = 0.0,
+        prior_path: str | Path | None = None,
     ) -> None:
         self.catalog_path = Path(catalog_path)
-        if prior_field not in {"uniform", "rating_number"}:
+        if prior_field not in {
+            "uniform",
+            "rating_number",
+            "verified_reviews_365d",
+        }:
             raise ValueError(
-                "prior_field must be 'uniform' or the catalog field "
-                "'rating_number'"
+                "prior_field must be 'uniform', the catalog field "
+                "'rating_number', or the bundled field "
+                "'verified_reviews_365d'"
             )
         self.prior_field = prior_field
         self.prior_smoothing = float(prior_smoothing)
+        if not math.isfinite(self.prior_smoothing) or self.prior_smoothing < 0:
+            raise ValueError("prior_smoothing must be finite and non-negative")
+        self.prior_path = Path(prior_path) if prior_path is not None else None
+        self.external_prior = self._load_external_prior()
         self.products: dict[str, ProductIntent] = {}
         self.initial_message_index: dict[str, list[str]] = defaultdict(list)
         self.category_index: dict[str, list[str]] = defaultdict(list)
@@ -216,6 +226,53 @@ class Agent:
         self.intent_tracker = self._empty_intent_tracker()
         self._build_index()
         self.all_product_ids = tuple(sorted(self.products, key=self._rank_key))
+
+    def _load_external_prior(self) -> dict[str, int]:
+        """Load the compact, aggregate review prior when it is configured."""
+
+        if self.prior_field != "verified_reviews_365d":
+            if self.prior_path is not None:
+                raise ValueError(
+                    "prior_path is only valid with "
+                    "prior_field='verified_reviews_365d'"
+                )
+            return {}
+        if self.prior_path is None:
+            raise ValueError(
+                "prior_path is required with "
+                "prior_field='verified_reviews_365d'"
+            )
+
+        weights: dict[str, int] = {}
+        with self.prior_path.open(encoding="utf-8") as handle:
+            header = handle.readline().rstrip("\n").split("\t")
+            expected = ["parent_asin", self.prior_field]
+            if header != expected:
+                raise ValueError(
+                    f"unexpected review-prior header: {header}; "
+                    f"expected {expected}"
+                )
+            for line_number, line in enumerate(handle, start=2):
+                if not line.strip():
+                    continue
+                try:
+                    parent_asin, raw_weight = line.rstrip("\n").split("\t")
+                    weight = int(raw_weight)
+                except ValueError as error:
+                    raise ValueError(
+                        f"invalid review-prior row at line {line_number}"
+                    ) from error
+                if not parent_asin or weight < 0:
+                    raise ValueError(
+                        f"invalid review-prior row at line {line_number}"
+                    )
+                if parent_asin in weights:
+                    raise ValueError(
+                        f"duplicate review-prior parent_asin at line "
+                        f"{line_number}: {parent_asin}"
+                    )
+                weights[parent_asin] = weight
+        return weights
 
     def _empty_intent_tracker(self) -> IntentTracker:
         """Create the shared NLP tracker without rescanning/indexing the catalog.
@@ -247,7 +304,11 @@ class Agent:
                 prior_value = (
                     1.0
                     if self.prior_field == "uniform"
-                    else float(rating_number)
+                    else (
+                        float(rating_number)
+                        if self.prior_field == "rating_number"
+                        else self.external_prior.get(parent_asin, 0.0)
+                    )
                 )
                 intent = ProductIntent(
                     parent_asin=parent_asin,

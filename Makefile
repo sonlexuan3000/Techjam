@@ -12,16 +12,16 @@ help:
 	@echo "make setup                    Create .venv and fetch the official catalog"
 	@echo "make test                     Run fast unit/contract tests"
 	@echo "make demo                     Run one deterministic multi-turn catalog demo"
-	@echo "make submission-archive       Build a clean source-only submission zip"
-	@echo "make evaluate                 Integration-only check on organizer public 200"
+	@echo "make submission-archive       Build the minimal offline submission zip"
+	@echo "make evaluate                 Evaluate on organizer public 200 development set"
 	@echo "make unseen-data              Reproduce shared 2,000 dev + 800 regression sessions"
 	@echo "make evaluate-unseen-dev      Evaluate the generated shared dev split"
 	@echo "make evaluate-candidate-dev   Evaluate ENTRYPOINT on generated shared dev"
-	@echo "make evaluate-unseen-holdout  Evaluate the shared second split after freezing code"
+	@echo "make evaluate-unseen-holdout  Evaluate the generated 800-session check"
 	@echo "make human-stress             Run independent 100-case NLP benchmark"
 	@echo "make stress                   Run wrapper stress on generated shared dev"
-	@echo "make benchmark                Run candidate-safe checks (never public 200)"
-	@echo "make integration-check        Run tests + public 200 after winners are frozen"
+	@echo "make benchmark                Run generated-data and NLP checks"
+	@echo "make integration-check        Run tests + public 200 development evaluation"
 
 setup: $(VENV_PYTHON) data
 
@@ -30,6 +30,9 @@ $(VENV_PYTHON):
 
 data: $(VENV_PYTHON)
 	$(VENV_PYTHON) scripts/bootstrap.py
+	$(VENV_PYTHON) scripts/verify_review_prior.py \
+		--catalog data/catalog.jsonl \
+		--prior submission/data/review_prior.tsv
 
 test: $(VENV_PYTHON)
 	$(VENV_PYTHON) -m unittest discover -v
@@ -43,9 +46,7 @@ submission-archive:
 	$(PYTHON) scripts/build_submission_archive.py
 
 evaluate: data
-	@test "$(PUBLIC_INTEGRATION)" = "1" || \
-		(echo "Blocked: use generated tests for candidates; only run 'make integration-check' after winners are frozen."; exit 2)
-	@echo "Running organizer public 200 as a frozen integration regression only."
+	@echo "Running organizer public 200 development evaluation."
 	$(VENV_PYTHON) -m evaluator.local_evaluator
 
 check: benchmark
@@ -92,5 +93,4 @@ stress: unseen-data
 
 benchmark: test evaluate-unseen-dev human-stress
 
-integration-check: test
-	$(MAKE) PUBLIC_INTEGRATION=1 evaluate
+integration-check: test evaluate

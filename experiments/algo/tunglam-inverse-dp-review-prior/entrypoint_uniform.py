@@ -1,4 +1,4 @@
-"""Compatibility alias for the selected uniform inverse-DP backend."""
+"""Compatibility entrypoint for the uniform-belief ablation."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from tunglam_inverse_dp.agent import Agent
 
 
 def build_agent(catalog_path: str | Path) -> Agent:
-    """Build the integrated winner with equal inverse-DP belief priors."""
+    """Build the integrated core with equal inverse-DP belief priors."""
 
     return Agent(
         catalog_path,

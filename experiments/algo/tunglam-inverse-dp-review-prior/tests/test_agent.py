@@ -155,9 +155,128 @@ class InverseSimulatorAgentTest(unittest.TestCase):
         self.assertEqual(weights, [1000.0, 10.0])
         self.assertEqual(total, 1010.0)
 
-    def test_external_prior_is_rejected(self) -> None:
-        with self.assertRaisesRegex(ValueError, "uniform.*rating_number"):
+    def test_external_prior_requires_an_explicit_path(self) -> None:
+        with self.assertRaisesRegex(ValueError, "prior_path is required"):
             Agent(self.catalog_path, prior_field="verified_reviews_365d")
+
+    def test_external_prior_is_loaded_with_smoothing(self) -> None:
+        prior_path = Path(self.temporary_directory.name) / "review_prior.tsv"
+        prior_path.write_text(
+            "parent_asin\tverified_reviews_365d\n"
+            "TARGET\t40\n"
+            "POPULAR_DISTRACTOR\t2\n"
+            "SECOND_DISTRACTOR\t0\n",
+            encoding="utf-8",
+        )
+        agent = Agent(
+            self.catalog_path,
+            prior_field="verified_reviews_365d",
+            prior_smoothing=1.0,
+            prior_path=prior_path,
+        )
+
+        weights, total = agent._belief_weights(
+            (("TARGET", 0), ("POPULAR_DISTRACTOR", 0), ("SECOND_DISTRACTOR", 0))
+        )
+
+        self.assertEqual(weights, [41.0, 3.0, 1.0])
+        self.assertEqual(total, 45.0)
+        self.assertEqual(
+            sorted(agent.products, key=agent._rank_key),
+            ["TARGET", "POPULAR_DISTRACTOR", "SECOND_DISTRACTOR"],
+        )
+
+    def test_missing_external_prior_rows_keep_products_possible(self) -> None:
+        prior_path = Path(self.temporary_directory.name) / "sparse_prior.tsv"
+        prior_path.write_text(
+            "parent_asin\tverified_reviews_365d\nTARGET\t9\n",
+            encoding="utf-8",
+        )
+        agent = Agent(
+            self.catalog_path,
+            prior_field="verified_reviews_365d",
+            prior_smoothing=1.0,
+            prior_path=prior_path,
+        )
+
+        weights, total = agent._belief_weights(
+            (("TARGET", 0), ("POPULAR_DISTRACTOR", 0))
+        )
+
+        self.assertEqual(weights, [10.0, 1.0])
+        self.assertEqual(total, 11.0)
+
+    def test_external_prior_rejects_malformed_assets(self) -> None:
+        prior_path = Path(self.temporary_directory.name) / "malformed_prior.tsv"
+        malformed_payloads = (
+            "parent_asin\twrong_field\nTARGET\t1\n",
+            "parent_asin\tverified_reviews_365d\nTARGET\n",
+            "parent_asin\tverified_reviews_365d\nTARGET\t1.5\n",
+            "parent_asin\tverified_reviews_365d\nTARGET\t-1\n",
+            "parent_asin\tverified_reviews_365d\nTARGET\t1\nTARGET\t2\n",
+        )
+        for payload in malformed_payloads:
+            with self.subTest(payload=payload):
+                prior_path.write_text(payload, encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    Agent(
+                        self.catalog_path,
+                        prior_field="verified_reviews_365d",
+                        prior_smoothing=1.0,
+                        prior_path=prior_path,
+                    )
+
+    def test_prior_path_is_rejected_for_catalog_or_uniform_modes(self) -> None:
+        prior_path = Path(self.temporary_directory.name) / "unused.tsv"
+        prior_path.write_text("unused\n", encoding="utf-8")
+        for prior_field in ("uniform", "rating_number"):
+            with self.subTest(prior_field=prior_field):
+                with self.assertRaisesRegex(ValueError, "only valid"):
+                    Agent(
+                        self.catalog_path,
+                        prior_field=prior_field,
+                        prior_path=prior_path,
+                    )
+        for smoothing in (-1.0, float("nan"), float("inf")):
+            with self.subTest(smoothing=smoothing):
+                with self.assertRaisesRegex(ValueError, "prior_smoothing"):
+                    Agent(
+                        self.catalog_path,
+                        prior_field="uniform",
+                        prior_smoothing=smoothing,
+                    )
+
+    def test_external_prior_never_reintroduces_a_hard_mismatch(self) -> None:
+        prior_path = Path(self.temporary_directory.name) / "adversarial_prior.tsv"
+        prior_path.write_text(
+            "parent_asin\tverified_reviews_365d\n"
+            "TARGET\t0\n"
+            "POPULAR_DISTRACTOR\t1000000\n"
+            "SECOND_DISTRACTOR\t500000\n",
+            encoding="utf-8",
+        )
+        agent = Agent(
+            self.catalog_path,
+            prior_field="verified_reviews_365d",
+            prior_smoothing=1.0,
+            prior_path=prior_path,
+        )
+        agent.reset("hard-filter", {})
+        agent.respond(
+            "hard-filter",
+            "I'm looking for Shoes, but I'm still exploring.",
+            1,
+            10,
+        )
+
+        response = agent.respond(
+            "hard-filter",
+            "For that, what matters is: alpha feature; beta feature.",
+            2,
+            10,
+        )
+
+        self.assertEqual(response["recommendations"], [{"parent_asin": "TARGET"}])
 
     def test_uniform_prior_removes_all_catalog_popularity_bias(self) -> None:
         agent = Agent(

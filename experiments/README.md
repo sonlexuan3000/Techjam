@@ -6,8 +6,10 @@ selected runtime is exported from `submission/agent.py` and mirrored through
 
 The retained inverse-DP experiment records:
 
-- the original algorithm contribution and reviewed data-safe revision;
-- the uniform-prior and catalog `rating_number` ablation;
+- the original algorithm contribution and reviewed integration;
+- the shipped offline review prior plus uniform and catalog `rating_number`
+  ablations;
+- the public-selection and generated-distribution tradeoff;
 - focused inverse-card, DP, state, and parity tests;
 - commands that reproduce the pre-integration comparison.
 

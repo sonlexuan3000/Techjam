@@ -13,9 +13,12 @@ The bootstrap script downloads the frozen organizer archive from the
 verifies SHA-256
 `07fd142631fd6b03e2b4d09988c3eb7d53720e9d57010c79db48eeaada50a8f8`,
 decompresses `catalog.jsonl`, and validates exactly 50,000 rows.
+The same setup target also verifies the bundled review prior's checksum and
+exact catalog-ASIN coverage; its provenance is documented in
+[`submission/data/README.md`](../submission/data/README.md).
 
 The catalog and compressed archive are ignored by Git. Do not add them to the
-source-only submission ZIP.
+offline-runtime submission ZIP.
 
 ## `public_set.jsonl`
 
