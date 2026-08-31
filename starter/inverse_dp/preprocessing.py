@@ -1,6 +1,6 @@
-"""Compatibility import for the integrated input preprocessor."""
+"""Compatibility exports for the production input preprocessor."""
 
-from starter.inverse_dp.preprocessing import (
+from submission.src.shopping_copilot.preprocessing import (
     InputPreprocessor,
     canonicalize_punctuation,
     is_core_protocol_message,

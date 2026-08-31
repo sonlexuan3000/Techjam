@@ -3,7 +3,8 @@
 - Original owner: Tung Lam Nguyen
 - Original commit: `044c2fa`
 - Reviewed base: `c5987f5`
-- Status: ready for experiment integration
+- Status: selected and integrated into `starter.agent.Agent`
+- Frozen pre-integration source commit: `6ff9b1e`
 - Primary entrypoint: `entrypoint.py` (uniform prior)
 - Optional ablation: `entrypoint_rating_number.py`
 
@@ -25,8 +26,10 @@ The integration keeps the original high-value pieces:
 - finite-horizon DP over rank reward, future disclosures, Boundary probability,
   ten turns, and the requested Top-K cap.
 
-The primary prior is uniform because generated targets are sampled uniformly
-and this variant performed better than the catalog `rating_number` prior.
+The primary inverse-DP belief prior is uniform because generated targets are
+sampled uniformly and this variant performed better than the global catalog
+`rating_number` prior. The uncertain NLP recovery ranker retains the existing
+catalog rating count only as a tie-break among equally relevant matches.
 
 ## Safe NLP boundary
 
@@ -65,6 +68,10 @@ candidate uses only fields already present in the organizer-supplied catalog.
 The original experiment remains recoverable from Git history.
 
 ## Reproduction
+
+The commands below now exercise a compatibility alias to the integrated source.
+Use commit `6ff9b1e` to reproduce the isolated candidate exactly as it was
+reviewed and selected; the metrics table is the preserved selection record.
 
 From the repository root:
 
@@ -123,7 +130,9 @@ Verification completed without running the organizer public set:
 - exact generated-dev aggregate matches the pre-integration uniform ablation;
 - deterministic wrapper stress also scores `0.957430` with identical HR/MRR/MTTC;
 - all `2,000/2,000` exact-vs-wrapper session summaries match;
-- startup on an Apple M4: about `5.37 s`, maximum RSS about `197 MiB`;
+- pre-integration candidate startup on an Apple M4: about `5.37 s`, maximum
+  RSS about `197 MiB` (the packaged integration is measured separately in
+  `submission/REPORT.md`);
 - runtime API/model/token usage: zero.
 
 ## Limitations
@@ -145,9 +154,14 @@ Verification completed without running the organizer public set:
 - `entrypoint.py`: primary uniform-prior adapter.
 - `entrypoint_uniform.py`: compatibility alias for earlier benchmark commands.
 - `entrypoint_rating_number.py`: organizer-catalog-only prior ablation.
-- `tunglam_inverse_dp/agent.py`: card reconstruction, safe focus/recovery,
-  filtering, ranking, and DP.
-- `tunglam_inverse_dp/preprocessing.py`: wrapper normalization with provenance.
+- `tunglam_inverse_dp/agent.py`: compatibility import retained for historical
+  benchmark commands.
+- `tunglam_inverse_dp/preprocessing.py`: compatibility import retained for
+  historical benchmark commands.
+- `submission/src/shopping_copilot/core.py`: integrated card reconstruction,
+  safe focus/recovery, filtering, ranking, and DP.
+- `submission/src/shopping_copilot/preprocessing.py`: integrated wrapper
+  normalization with provenance.
 - `tests/test_agent.py`: inverse filtering, DP, paraphrase safety, trust-chain,
   and override rollback tests.
 - `tools/diagnostics.py`: exact-protocol survival/runtime diagnostics.

@@ -49,21 +49,26 @@ Competing NLP and algorithm variants belong under `experiments/`; use
 [docs/EXPERIMENT_WORKFLOW.md](docs/EXPERIMENT_WORKFLOW.md) so every candidate can
 be compared without replacing the official Agent.
 
-## Current Working Baseline
+## Selected Backend
 
-Verified locally on 28 August 2026:
+The production `starter.agent.Agent` now uses Tung Lam Nguyen's data-safe
+inverse-card reconstruction plus finite-horizon Top-K policy with a uniform
+product prior. It is packaged independently under `submission/` and requires no
+network, API key, model download, or third-party runtime dependency.
 
-| Suite | Sessions | Hit Rate@10 | MRR | MTTC | Score |
+Verified on the shared generated-dev split on 31 August 2026:
+
+| Variant | Sessions | Hit Rate@10 | MRR | MTTC | Score |
 |---|---:|---:|---:|---:|---:|
-| Official public, historical reference only | 200 | 0.995 | 0.954631 | 2.0750 | 0.962389 |
-| Shared synthetic dev | 2,000 | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
-| Public-derived wrapper stress, historical only | 200 | 0.995 | 0.952964 | 2.0900 | 0.961589 |
+| Previous exact-evidence backend | 2,000 | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
+| Selected uniform inverse-DP | 2,000 | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
+| Catalog `rating_number` ablation | 2,000 | 0.9935 | 0.975782 | 2.6860 | 0.955765 |
 
-The synthetic-dev result suggests the retrieval/ranking strategy transfers to
-new catalog targets. The dependency-free lightweight parser closes the previous
-wrapper-only paraphrase failure while keeping exact constraint values intact.
-Stress results are diagnostics, not a claim about private test wording. See
-[docs/TEAM_BASELINE.md](docs/TEAM_BASELINE.md).
+No organizer-public session was used to select these variants. The selected
+backend preserves a recovery universe whenever NLP is uncertain, so a parser
+mistake can narrow the active focus without permanently deleting every fallback
+candidate. See [docs/TEAM_BASELINE.md](docs/TEAM_BASELINE.md) and
+[submission/README.md](submission/README.md).
 
 Unknown wrappers use catalog-guided exact-span fallback and are recorded as
 `catalog_fallback`; that evidence affects ranking but cannot destructively
@@ -135,7 +140,7 @@ The command writes per-session results and aggregate metrics to `results.json`.
 
 The organizer's weak starter scores Hit Rate@10 `0.125`, MRR `0.068034`, and
 MTTC `9.81` on the released public set; see `docs/baseline_results.json`. The
-current `starter/agent.py` is the team's stronger deterministic working baseline.
+current `starter/agent.py` is the team's selected offline inverse-DP backend.
 Those public numbers are retained as historical references, not as candidate
 selection metrics; `make evaluate` is reserved for the frozen integration build.
 
@@ -172,6 +177,10 @@ TechnicalScore = 0.50 × HitRate@10 + 0.30 × MRR + 0.20 × Efficiency
 Efficiency = clip((11 - MTTC) / 10, 0, 1)
 ```
 
+`TechnicalScore` is an objective input to the `Technical Execution` assessment.
+It is not a separate judging criterion and does not represent the entire
+`Technical Execution` score.
+
 Only exact `parent_asin` equality produces a hit. Core metrics are also reported by scenario.
 
 ## Model Choice and Cost
@@ -196,8 +205,10 @@ scripts/run_paraphrase_stress_eval.py      input-language robustness test
 scripts/evaluate_candidate.py              isolated generated-dev candidate runner
 scripts/evaluate_independent_paraphrases.py independent 100-case NLP runner
 tests/fixtures/independent_human_paraphrases.jsonl frozen human-style NLP cases
-starter/agent.py                  official interface and current team baseline
-starter/parser.py                 dependency-free lightweight input parser
+starter/agent.py                  compatibility adapter to the selected backend
+starter/parser.py                 compatibility export for the input parser
+submission/agent.py               self-contained competition entry file
+submission/src/shopping_copilot/  parser, state, recovery, inverse filtering, DP
 evaluator/local_evaluator.py      public-set simulator and scorer
 ```
 

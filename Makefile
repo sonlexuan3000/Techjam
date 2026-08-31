@@ -4,13 +4,15 @@ UNSEEN_SEED ?= techjam-unseen-v1
 UNSEEN_DIR := data/unseen_eval
 ENTRYPOINT ?=
 
-.PHONY: help setup data test evaluate check unseen-data evaluate-unseen-dev \
+.PHONY: help setup data test demo submission-archive evaluate check unseen-data evaluate-unseen-dev \
 	evaluate-candidate-dev evaluate-unseen-holdout human-stress stress benchmark \
 	integration-check
 
 help:
 	@echo "make setup                    Create .venv and fetch the official catalog"
 	@echo "make test                     Run fast unit/contract tests"
+	@echo "make demo                     Run one deterministic multi-turn catalog demo"
+	@echo "make submission-archive       Build a clean source-only submission zip"
 	@echo "make evaluate                 Integration-only check on organizer public 200"
 	@echo "make unseen-data              Reproduce shared 2,000 dev + 800 regression sessions"
 	@echo "make evaluate-unseen-dev      Evaluate the generated shared dev split"
@@ -31,6 +33,14 @@ data: $(VENV_PYTHON)
 
 test: $(VENV_PYTHON)
 	$(VENV_PYTHON) -m unittest discover -v
+	$(VENV_PYTHON) -m unittest discover \
+		-s experiments/algo/tunglam-inverse-dp-review-prior/tests -v
+
+demo: data
+	$(VENV_PYTHON) scripts/demo_session.py --catalog data/catalog.jsonl
+
+submission-archive:
+	$(PYTHON) scripts/build_submission_archive.py
 
 evaluate: data
 	@test "$(PUBLIC_INTEGRATION)" = "1" || \

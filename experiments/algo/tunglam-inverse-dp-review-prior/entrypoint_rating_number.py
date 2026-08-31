@@ -1,4 +1,4 @@
-"""Catalog-only rating-count ablation for the inverse-DP candidate."""
+"""Compatibility entrypoint for the catalog rating-count ablation."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from tunglam_inverse_dp.agent import Agent
 
 
 def build_agent(catalog_path: str | Path) -> Agent:
-    """Build the same candidate using only the supplied catalog popularity."""
+    """Build the integrated core with a global catalog popularity prior."""
 
     return Agent(
         catalog_path,

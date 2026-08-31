@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from starter.agent import Agent
+from starter.intent_tracker import Agent
 
 
 class AgentStateTest(unittest.TestCase):
