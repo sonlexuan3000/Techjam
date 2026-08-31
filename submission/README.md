@@ -1,22 +1,48 @@
-# Shopping Copilot submission backend
+# InverseCart competition backend
 
-This directory is the self-contained competition bundle. It exports the
-required `Agent.reset` and `Agent.respond` interface, runs fully offline, and
-uses only Python's standard library.
+This directory is the self-contained TikTok TechJam 2026 Track 4 submission. It
+exports the required `Agent.reset` and `Agent.respond` interface and runs fully
+offline using only the Python standard library.
 
-## Environment
+## Runtime contract
 
-- Python 3.11 recommended; code supports Python 3.10 or newer.
-- No third-party package is required at runtime.
-- No API key, network connection, model download, environment variable, or GPU
-  is required.
-- The organizer catalog must be available as `data/catalog.jsonl`, or its path
-  must be passed to `Agent(...)`.
+- Python 3.10 or newer; Python 3.11 recommended.
+- Third-party runtime packages: none.
+- API key, model download, GPU, vector database, and network access: not needed.
+- Runtime prompt/completion tokens: `0 / 0`.
+- Organizer input: `data/catalog.jsonl`, or an explicit path passed to `Agent`.
 
-No installation step is required. `requirements.txt` is intentionally empty
-apart from its explanatory comment.
+`requirements.txt` is intentionally empty apart from an explanatory comment.
 
-Import the official entrypoint:
+## Validate an extracted bundle
+
+After extracting the submission ZIP, pass the organizer catalog by absolute or
+relative path:
+
+```bash
+python3 submission/smoke.py --catalog /absolute/path/to/catalog.jsonl
+```
+
+The command imports the competition entrypoint, builds the 50,000-product index,
+resets a session, performs one turn, and validates the response shape.
+
+## Validate from the full repository
+
+From the full repository root:
+
+```bash
+make setup
+make test
+make demo
+python3 submission/smoke.py --catalog data/catalog.jsonl
+make submission-archive
+```
+
+The last command creates a deterministic source-only ZIP. Generated datasets,
+catalog files, bytecode, virtual environments, and evaluation outputs are not
+included.
+
+## Use the entrypoint
 
 ```python
 from submission.agent import Agent
@@ -32,6 +58,7 @@ agent.reset(
         "summary": "Prefers practical products.",
     },
 )
+
 response = agent.respond(
     "session-1",
     "I'm looking for Shoes, but I'm still exploring.",
@@ -43,93 +70,99 @@ response = agent.respond(
 The entry file also supports harnesses that load `submission/agent.py` directly
 by filesystem path.
 
-## Reproduce
+## Core idea
 
-The runtime source in this directory is self-contained; the catalog and scoring
-harness are organizer inputs. To smoke-test only this bundle with a catalog:
+InverseCart does not issue a new search query on every turn. It reconstructs the
+released intent card for every catalog product and treats the product as a
+hypothesis about the conversation that would occur if it were the hidden target.
 
-```bash
-python3 submission/smoke.py --catalog data/catalog.jsonl
+The runtime then:
+
+1. parses the incoming message into a state transition;
+2. keeps product cards capable of generating the observed transcript;
+3. protects a trusted recovery universe when NLP is uncertain;
+4. asks `other`, which can reveal up to two remaining card values;
+5. uses finite-horizon DP to choose the recommendation prefix length for a
+   fixed candidate ordering.
+
+For a target at rank `r` on turn `t`, the recurrence uses the released
+per-session reward:
+
+```text
+0.50 + 0.30 / r + 0.02 × (11 - t)
 ```
 
-The full repository adds test generation and evaluator tooling. From its root:
+If the prefix misses, those products are rejected. Remaining hypotheses are
+partitioned by the next `other` response each product would generate, and the DP
+continues through turn ten. The selected product prior is uniform.
 
-```bash
-make setup
-make test
-make evaluate-unseen-dev
-make demo
-make submission-archive
-```
+## Safe language boundary
 
-`make evaluate-unseen-dev` uses 2,000 deterministic catalog targets that do not
-overlap the organizer's public 200. Do not use the public set for tuning.
-After the release is frozen, the one-command official-compatible integration
-run is `make integration-check`; this intentionally runs the organizer public
-200 and must not be used to choose or tune a candidate.
+Released wrappers with catalog-grounded values use exact inverse filtering.
+Recognized paraphrased wrappers can create a focus tier while retaining the
+recovery universe. Exact catalog phrases inside otherwise unknown prose become
+non-destructive `catalog_fallback` ranking evidence and matter only when the
+focus is exhausted. If uncertain NLP produces no focus candidates, the agent
+uses a conservative `1 / 2 / up to 10` recommendation schedule instead of
+applying DP to an unreliable ordering.
 
-## Architecture
+The parser recognizes supported category, requirement, preference, disclosure,
+no-preference, negation, and override families. It is not a general semantic
+model; a rewrite such as `not wet in rain -> waterproof` is not guaranteed.
 
-1. Reconstruct the same small hard/soft intent card that visible evaluator code
-   can reveal for every catalog product.
-2. Parse exact protocol messages deterministically; normalize recognized wrapper
-   paraphrases while retaining their provenance.
-3. Keep products that could have generated the conversation in a focus tier.
-   When language is uncertain, retain a trusted recovery universe instead of
-   permanently deleting the target.
-4. Ask `other` so the simulator can reveal up to two remaining constraints.
-5. Use a finite-horizon dynamic program to select how many ranked products to
-   return now versus preserving the opportunity to clarify.
+## Verified results
 
-The inverse-DP belief prior is uniform. Within uncertain NLP recovery only,
-catalog `rating_number` remains a relevance tie-break between otherwise equal
-matches; it never decides eligibility or hard filtering. A global
-`rating_number` inverse-DP prior was benchmarked but produced lower MRR and
-Technical Score on generated-dev.
+The final inverse-DP candidate and uniform-prior choice were selected on
+generated-development. The current backend produced this public result after
+the integration freeze:
 
-## Verified generated-dev result
-
-| Sessions | Hit Rate@10 | MRR | MTTC | Technical Score |
+| Sessions | HR@10 | MRR | MTTC | Technical Score |
 |---:|---:|---:|---:|---:|
-| 2,000 | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
+| 200 public | 1.0000 | 0.997500 | 2.7950 | 0.963350 |
 
-After code was frozen, the shared 800-session second split scored HR@10
-`0.9975`, MRR `0.980420`, MTTC `2.5850`, and Technical Score `0.961176`.
-That split is generated from a public repository seed, so it is a regression
-check rather than an organizer-private estimate.
+Candidate selection and post-freeze regression used catalog products with zero
+public-target overlap:
 
-Measured on an Apple M4 with 50,000 products, startup was `5.75 s` with maximum
-RSS around `199 MiB`. Across 500 turns from 200 generated-dev sessions, response
-latency was `30.045 ms` mean, `2.368 ms` median, `136.585 ms` p95, and
-`847.916 ms` maximum. Runtime model/API token use and estimated model cost are
-both zero. Timing varies with hardware and candidate-pool size.
+| Evaluation | Sessions | HR@10 | MRR | MTTC | Technical Score |
+|---|---:|---:|---:|---:|---:|
+| Generated development | 2,000 | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
+| Generated regression | 800 | 0.9975 | 0.980420 | 2.5850 | 0.961176 |
 
-## Limitations
+These are public/development results, not a private-set estimate. The full
+methodology and limitations are recorded in `REPORT.md`.
 
-- The score gain relies on the released intent-card construction, disclosure
-  order, scenario behavior, metric, and ten-turn horizon. Changed private
-  mechanics may reduce it.
-- The lightweight NLP handles many wrapper changes while keeping exact catalog
-  values intact, but it is not a general semantic model. For example,
-  `not wet in rain` is not guaranteed to match `waterproof`.
-- On the independent 100-case language diagnostic, only `1/35` semantic-value
-  paraphrases grounded successfully and only `1/100` complete cases passed.
-  The recovery tier limits damage from these misses; it does not solve them.
-- `user_profile` is stored per session but is not yet used in ranking.
-- One Agent instance supports multiple sequential sessions. It is not designed
-  for concurrent calls without an external lock.
+## Runtime profile
+
+Measured on an Apple M4 with the 50,000-product catalog:
+
+- startup: `5.75 s`;
+- maximum resident memory: approximately `199 MiB`;
+- 500-turn latency: `30.045 ms` mean, `2.368 ms` median,
+  `136.585 ms` p95, `847.916 ms` maximum;
+- runtime model/API calls, tokens, and marginal model cost: zero.
+
+Timing varies with hardware and candidate-pool size.
 
 ## Files
 
 ```text
 submission/
-  agent.py                         required competition entry file
-  smoke.py                         standalone bundle smoke test
-  requirements.txt                standard-library-only dependency declaration
-  README.md                        setup, architecture, metrics, limitations
-  REPORT.md                        method, tools, cost, latency, contributions
+  agent.py                         competition entrypoint
+  smoke.py                         standalone catalog smoke test
+  requirements.txt                zero-dependency declaration
+  README.md                        setup and runtime overview
+  REPORT.md                        method, evaluation, cost, limitations
   src/shopping_copilot/core.py     inverse filtering, recovery, ranking, DP
   src/shopping_copilot/parser.py   message-to-event parsing
-  src/shopping_copilot/intent_tracker.py conflict-aware evidence state
-  src/shopping_copilot/preprocessing.py wrapper normalization
+  src/shopping_copilot/            state tracking and wrapper normalization
 ```
+
+## Limitations
+
+- The policy assumes the released card construction, disclosure order, scenario
+  model, score function, and ten-turn horizon.
+- General semantic-value paraphrases remain weak. Recovery prevents an
+  uncertain parse from redefining eligibility but cannot guarantee early rank.
+- `user_profile` is stored per session but is not used by the ranking policy.
+- One Agent instance supports multiple sequential sessions; concurrent calls
+  require an external lock.

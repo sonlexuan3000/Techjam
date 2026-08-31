@@ -1,4 +1,9 @@
-# Competition Specification
+# Track 4 participant-kit specification
+
+> This is the repository's technical reference derived from the released
+> participant kit. The [official Devpost rules](https://tiktoktechjam2026.devpost.com/rules)
+> remain authoritative for eligibility, deadlines, and event-level submission
+> requirements.
 
 ## Objective
 

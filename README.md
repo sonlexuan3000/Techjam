@@ -1,224 +1,319 @@
-# TechJam Conversational E-Commerce Search Challenge
+# InverseCart: Offline Conversational Product Search
 
-Build an AI shopping agent that asks useful follow-up questions and recommends the customer's hidden target product within at most 10 turns.
+**TikTok TechJam 2026 · Track 4 — Shopping Copilot**
 
-This is the team's Track 4 repository. The previous Track 1 code is preserved on
-`archive/track1-before-track4-20260828`; `main` now contains only the Shopping
-Copilot participant kit, the current deterministic agent, and shared evaluation
-tooling.
+InverseCart is a deterministic shopping agent that treats every catalog product
+as a hypothesis about the conversation the customer would have. It reconstructs
+the intent card behind each of 50,000 products, keeps the hypotheses consistent
+with the dialogue, and plans **how many products to expose now** against the
+expected value of learning from the next clarification.
 
-## Team Quick Start
+The complete competition runtime is offline and uses only the Python standard
+library: no LLM call, API key, GPU, vector database, model download, or network
+connection is required.
 
-Python 3.10 or newer is recommended. No API key is required for the current
-baseline.
+| Runtime | Catalog | Model tokens | External APIs | Tests |
+|---|---:|---:|---:|---:|
+| Python 3.10+ | 50,000 products | 0 | 0 | 60 passing |
+
+## Results at a glance
+
+The final inverse-DP candidate and uniform-prior choice were selected on 2,000
+reproducible generated-development sessions whose target products have zero
+overlap with the organizer's public 200. The reported final public result was
+produced after the integration freeze.
+
+| Evaluation | Sessions | Hit Rate@10 | MRR | MTTC | Technical Score |
+|---|---:|---:|---:|---:|---:|
+| **Organizer public integration check** | 200 | **1.0000** | **0.997500** | **2.7950** | **0.963350** |
+| Generated development | 2,000 | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
+| Post-freeze generated regression | 800 | 0.9975 | 0.980420 | 2.5850 | 0.961176 |
+
+On the same organizer public 200, the released weak-BM25 starter scored HR@10
+`0.1250`, MRR `0.068034`, MTTC `9.8100`, and Technical Score `0.106710`.
+
+These results are development and public-integration evidence, not a prediction
+of organizer-private performance. See [Evaluation](docs/EVALUATION.md) for
+scenario results, ablations, dataset construction, and caveats.
+
+`TechnicalScore` is the released objective composite used as an input to
+Technical Execution; it is not the complete judged Technical Execution score or
+the final hackathon score.
+
+## What makes the approach different
+
+### 1. Model-based product hypothesis inference
+
+From the published interaction protocol, InverseCart derives a compact intent
+representation for every product. A product remains a candidate when its card
+could have generated the conversation observed so far. This turns multi-turn
+search into structured hypothesis inference instead of repeatedly issuing
+independent text queries.
+
+### 2. Recommendation depth is optimized against clarification
+
+Returning ten products immediately improves coverage but may end a successful
+session at a poor reciprocal rank. Returning too few wastes turns. For a fixed
+candidate ordering, a finite-horizon dynamic program evaluates every possible
+recommendation cutoff, combines immediate rank reward with the expected value
+of the next `other` reply, and chooses the best cutoff for the current belief
+state.
+
+### 3. Uncertain language is reversible
+
+Exact, catalog-grounded protocol evidence may safely narrow eligibility. A
+paraphrased or weakly grounded interpretation creates only a high-priority
+**focus tier**; it cannot delete the **trusted recovery universe**. If the focus
+tier is exhausted, the target can return instead of remaining trapped behind a
+plausible but incorrect parser decision.
+
+### 4. Overrides are state transitions, not fresh searches
+
+The state tracker separates the customer's active intent from useful historical
+evidence. A conflicting same-slot replacement such as `leather -> canvas`
+deactivates the old value, while compatible evidence remains searchable. It also
+repairs provisional miss history when an Intent Override session becomes known.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    C[50,000-product catalog] --> I[Intent-card reconstruction]
+    I --> X[Category and constraint indexes]
+
+    U[Customer message] --> P[Protocol-aware parser]
+    P --> S[Conflict-aware session state]
+    X --> F[Inverse-card hypothesis filter]
+    S --> F
+    F --> T[Exact candidates or non-empty focus tier]
+    F --> K[Trusted recovery universe]
+    T --> D[Finite-horizon Top-K policy]
+    K --> Q[Conservative fallback schedule if focus is empty]
+    D --> R[Ranked products + other question]
+    Q --> R
+```
+
+The runtime has five stages:
+
+1. **Catalog indexing** — reconstruct category, up to two hard constraints, and
+   the released up-to-two-value soft suffix for each product; build exact
+   constraint and category indexes in one catalog pass.
+2. **Message parsing** — recognize category, requirement, preference,
+   disclosure, negation, no-preference, and override events while preserving
+   the original catalog-value span.
+3. **State transition** — update active, superseded, negative, and retrieval
+   evidence without confusing an override with a new session.
+4. **Hypothesis inference** — replay trusted released-protocol evidence against
+   candidate intent cards; observed hard values remain mandatory on that path,
+   while uncertain evidence narrows only the reversible focus tier.
+5. **Dialogue planning** — use dynamic programming on exact candidates or a
+   non-empty focus tier; use a conservative `1 / 2 / up to 10` schedule when
+   only recovery remains, then ask `other` for more evidence.
+
+The detailed state model, recurrence, trust boundary, and complexity discussion
+are in [Technical architecture](docs/ARCHITECTURE.md).
+
+## Quick start
+
+Python 3.10 or newer is supported.
 
 ```bash
+git clone https://github.com/sonlexuan3000/Techjam.git
+cd Techjam
 make setup
 make test
-make unseen-data
+make demo
 ```
 
-Use the same generated tests on every teammate's machine:
+`make setup` creates `.venv`, downloads the frozen organizer catalog, verifies
+its SHA-256 checksum, and validates the 50,000-row count. `make demo` runs a
+deterministic end-to-end conversation against that catalog.
+
+Useful reproduction commands:
 
 ```bash
-# Current shared baseline
+# Reproduce the 2,000-session development and 800-session regression datasets
+make unseen-data
+
+# Evaluate the selected backend without using the organizer public set
 make evaluate-unseen-dev
+
+# Run the frozen 100-case language diagnostic
 make human-stress
 
-# Isolated candidates under experiments/
-make evaluate-candidate-dev ENTRYPOINT=experiments/algo/<owner>-<approach>/entrypoint.py
-make human-stress ENTRYPOINT=experiments/nlp/<owner>-<approach>/entrypoint.py
+# Build the deterministic source-only competition bundle
+make submission-archive
 ```
 
-Do **not** use `data/public_set.jsonl` or `make evaluate` to tune code, compare
-candidates, or choose a winner. NLP candidates are selected on the independent
-100-case human-style fixture; algorithm candidates are selected on the 2,000
-generated-dev sessions. Only the integration owner runs the organizer public
-200 after both winners are frozen, as a final protocol/regression check.
-
-`make unseen-data` deterministically builds 2,000 shared dev sessions and 800
-shared regression sessions from official catalog products that are not public-set
-targets. Generated files stay ignored; the committed generator and fixed seed
-make them reproducible. They are robustness tests, not leaked or predicted
-organizer-private data. Read [data/unseen_eval/README.md](data/unseen_eval/README.md)
-before using the second split.
-
-Team ownership, module boundaries, and PR rules are in
-[docs/TEAM_ROLES.md](docs/TEAM_ROLES.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
-Competing NLP and algorithm variants belong under `experiments/`; use
-[docs/EXPERIMENT_WORKFLOW.md](docs/EXPERIMENT_WORKFLOW.md) so every candidate can
-be compared without replacing the official Agent.
-
-## Selected Backend
-
-The production `starter.agent.Agent` now uses Tung Lam Nguyen's data-safe
-inverse-card reconstruction plus finite-horizon Top-K policy with a uniform
-product prior. It is packaged independently under `submission/` and requires no
-network, API key, model download, or third-party runtime dependency.
-
-Verified on the shared generated-dev split on 31 August 2026:
-
-| Variant | Sessions | Hit Rate@10 | MRR | MTTC | Score |
-|---|---:|---:|---:|---:|---:|
-| Previous exact-evidence backend | 2,000 | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
-| Selected uniform inverse-DP | 2,000 | 0.9935 | 0.977300 | 2.6255 | 0.957430 |
-| Catalog `rating_number` ablation | 2,000 | 0.9935 | 0.975782 | 2.6860 | 0.955765 |
-
-No organizer-public session was used to select these variants. The selected
-backend preserves a recovery universe whenever NLP is uncertain, so a parser
-mistake can narrow the active focus without permanently deleting every fallback
-candidate. See [docs/TEAM_BASELINE.md](docs/TEAM_BASELINE.md) and
-[submission/README.md](submission/README.md).
-
-Unknown wrappers use catalog-guided exact-span fallback and are recorded as
-`catalog_fallback`; that evidence affects ranking but cannot destructively
-intersect the candidate pool. Explicit requirement wrappers remain strong
-evidence. The next NLP problem is value-level semantics such as
-`not wet in rain -> waterproof`, which this parser intentionally does not guess.
-The ownership and future matcher contract are documented in
-[docs/TEAM_ROLES.md](docs/TEAM_ROLES.md).
-
-## Lightweight Input NLP
-
-`starter/parser.py` uses only Python's standard library. It recognizes families
-of category, requirement, preference, no-preference, negation, and override
-messages; normalizes smart punctuation; and preserves the raw constraint span
-for catalog matching. Explicit disclosure is parsed before generic negation so
-metadata such as `holds effectively without wiggling` is not corrupted.
-
-If a private message changes only the surrounding prose, the Agent can recover
-exact one-word or multi-word catalog atoms without an LLM call. It also handles
-two values joined by a semicolon or `and`, but does not claim semantic equivalence
-between differently worded values.
-
-On an Apple M4 with the 50,000-product catalog, the final parser averaged about
-`8.7 µs` per recognized message. Normal catalog fallback averaged `0.075 ms`
-with p95 `0.11 ms`. Building the full in-memory index takes about `5.3 s` once
-at process startup.
-
-## What You Receive
-
-- A frozen catalog of 50,000 products from the `Clothing_Shoes_and_Jewelry` category of Amazon Reviews 2023.
-- 200 labeled public sessions for local development.
-- A weak BM25 starter agent and deterministic local evaluator.
-- The Agent API contract and scoring rules.
-
-The organizer keeps 800 additional sessions private for final evaluation.
-
-## Task
-
-For each session, your agent receives an anonymized preference profile and a short customer message. Raw user IDs, review text, timestamps, and purchase history are never disclosed. On every turn the agent may:
-
-- ask a natural clarification question in `message` and identify one requested field in `ask_attribute`;
-- return a ranked list of up to 10 catalog `parent_asin` values;
-- do both in the same response.
-
-The session ends when the target product appears in the scored Top 10 or after turn 10. Sessions cover Buying, Browsing, Intent Override, and Boundary behavior.
-
-## Download the Catalog
-
-Download `catalog.jsonl.gz` from the GitHub Release attached to this repository, then run:
+The organizer public evaluation is deliberately guarded. After the backend is
+frozen, reproduce the recorded integration result with:
 
 ```bash
-gzip -dk catalog.jsonl.gz
-mv catalog.jsonl data/catalog.jsonl
+make integration-check
 ```
 
-Verify the downloaded file using the published `SHA256SUMS` file.
+## Deterministic demo trace
 
-## Run the Starter
+The default `make demo` target starts inside a non-trivial category and normally
+requires clarification:
 
-Python 3.10 or later is recommended. The starter uses only the Python standard library.
+| Turn | Customer evidence | Agent action | Ranked result |
+|---:|---|---|---|
+| 1 | “I'm looking for Underwear Undershirts, but I'm still exploring.” | Ask `other`; return one candidate | `B000TGPTOC` |
+| 2 | `cotton`; `60% Cotton, 40% Polyester` | Update the product hypotheses; ask `other` | hidden target `B0CKQ3CKZH` at rank 1 |
 
-```bash
-python3 -m evaluator.local_evaluator
+This trace is deterministic against the frozen catalog. It shows the hypothesis
+pool narrowing after one two-value disclosure; it is not a semantic-paraphrase
+demo.
+
+## Finite-horizon recommendation policy
+
+For a hit at turn `t` and rank `r`, the per-session contribution to the released
+Technical Score is:
+
+```text
+reward(t, r) = 0.50 + 0.30 / r + 0.02 × (11 - t)
 ```
 
-Edit the team-owned modules and keep `starter/agent.py` as the official adapter.
-Do not edit the evaluator or public labels when reporting a local score.
-The command writes per-session results and aggregate metrics to `results.json`.
+For every `k` from 1 to the requested Top-K cap, the policy evaluates:
 
-The organizer's weak starter scores Hit Rate@10 `0.125`, MRR `0.068034`, and
-MTTC `9.81` on the released public set; see `docs/baseline_results.json`. The
-current `starter/agent.py` is the team's selected offline inverse-DP backend.
-Those public numbers are retained as historical references, not as candidate
-selection metrics; `make evaluate` is reserved for the frozen integration build.
+- the probability-weighted reward of a target appearing in ranks `1..k`;
+- the miss branch, where the recommended prefix becomes rejected evidence;
+- every group of remaining hypotheses that would produce the same next `other`
+  reply;
+- the remaining horizon through turn 10;
+- the released Boundary-session probability when it is still applicable.
 
-## Agent Interface
+The selected belief prior is uniform. A catalog `rating_number` prior was tested
+as an ablation but slightly reduced MRR and Technical Score. The DP is optimal
+only inside the released card construction, disclosure policy, scenario model,
+uniform-prior assumption, score function, and ten-turn horizon.
+
+## NLP safety boundary
+
+The language layer is wrapper-tolerant, not a general semantic model.
+
+| Evidence route | How it is used |
+|---|---|
+| Released wrapper + grounded catalog value | Trusted hypothesis filtering and DP |
+| Recognized paraphrased wrapper | Canonicalized value, focus-tier ranking, recovery retained |
+| Exact catalog phrase inside unknown prose | Non-destructive `catalog_fallback` evidence |
+| Negation | Removes confidently matched forbidden evidence when a safe alternative exists |
+| Same-slot override | Supersedes the conflicting old value and reopens the focus tier |
+| Unknown semantic rewrite | Preserved without irreversible filtering |
+
+Wrapper changes that preserved the exact catalog value produced `0/2,000`
+differing scored-session summaries (hit, first-hit turn, and rank) against the
+canonical generated-development sessions.
+Value-level semantic rewrites remain a known weakness: for example,
+`not wet in rain` is not guaranteed to ground to `waterproof`. The recovery
+design limits the damage of that miss; it does not claim to solve semantic
+equivalence.
+
+## Ablation
+
+All variants below were evaluated on the same generated-development split.
+
+| Backend | HR@10 | MRR | MTTC | Technical Score |
+|---|---:|---:|---:|---:|
+| Previous exact-evidence backend | 0.9865 | 0.852769 | 2.7010 | 0.915061 |
+| **Uniform inverse-DP — selected** | **0.9935** | **0.977300** | **2.6255** | **0.957430** |
+| Catalog `rating_number` prior | 0.9935 | 0.975782 | 2.6860 | 0.955765 |
+
+The selected backend improves Technical Score by `0.042369` and MRR by
+`0.124531` over the previous exact-evidence backend without external data beyond
+the organizer-supplied catalog.
+
+## Runtime profile
+
+Measured on an Apple M4 with the 50,000-product catalog:
+
+| Measurement | Result |
+|---|---:|
+| One-time index startup | 5.75 s |
+| Maximum resident memory | ~199 MiB |
+| Response latency, mean | 30.045 ms |
+| Response latency, median | 2.368 ms |
+| Response latency, p95 | 136.585 ms |
+| Response latency, maximum | 847.916 ms |
+| Runtime prompt/completion tokens | 0 / 0 |
+| Marginal runtime model cost | $0 |
+
+Latency was measured across 500 turns from 200 generated-development sessions;
+timing varies with hardware and candidate-pool size.
+
+## Competition interface
 
 ```python
-class Agent:
-    def reset(self, session_id: str, user_profile: dict) -> None:
-        ...
+from submission.agent import Agent
 
-    def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict:
-        return {
-            "message": "Do you have a material preference?",
-            "ask_attribute": "material",
-            "recommendations": [
-                {"parent_asin": "B000..."},
-                {"parent_asin": "B001..."}
-            ],
-            "usage": {"prompt_tokens": 120, "completion_tokens": 30}
-        }
+agent = Agent("data/catalog.jsonl")
+agent.reset(session_id, user_profile)
+response = agent.respond(session_id, user_message, turn=1, top_k=10)
 ```
 
-`ask_attribute` is one of `category`, `material`, `color`, `size`, `style`, `brand`, `budget`, `feature`, `use_case`, `other`, or `null`. See `docs/agent_api_contract.json`.
+Each response follows the required contract:
 
-## Technical Metrics
+```python
+{
+    "message": "Which two product details matter most to you?",
+    "ask_attribute": "other",
+    "recommendations": [{"parent_asin": "B000..."}],
+    "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+}
+```
 
-- **Hit Rate@10:** fraction of sessions that find the target within 10 turns.
-- **MRR:** mean reciprocal rank of the target; a miss contributes zero.
-- **MTTC:** mean first-hit turn; a miss is assigned turn 11.
-- **Reported token usage:** prompt and completion tokens returned by the team's model client.
+See [submission/README.md](submission/README.md) for standalone harness usage and
+[docs/agent_api_contract.json](docs/agent_api_contract.json) for the complete
+machine-readable contract.
+
+## Repository map
 
 ```text
-TechnicalScore = 0.50 × HitRate@10 + 0.30 × MRR + 0.20 × Efficiency
-Efficiency = clip((11 - MTTC) / 10, 0, 1)
+submission/                         self-contained offline competition bundle
+  agent.py                          required Agent entrypoint
+  src/shopping_copilot/core.py      inverse filtering, recovery, ranking, DP
+  src/shopping_copilot/parser.py    message-to-event parser
+  src/shopping_copilot/             state tracking and wrapper normalization
+starter/                            compatibility imports for the local harness
+evaluator/                          deterministic released evaluator
+scripts/                            setup, generation, benchmarks, demo, packaging
+tests/                              state, parser, contract, and integration tests
+experiments/                        preserved algorithm ablations
+docs/ARCHITECTURE.md                algorithm and state-machine deep dive
+docs/EVALUATION.md                  metrics, protocol, ablations, and caveats
+docs/DEVPOST_SUBMISSION.md          ready-to-paste project narrative
 ```
 
-`TechnicalScore` is an objective input to the `Technical Execution` assessment.
-It is not a separate judging criterion and does not represent the entire
-`Technical Execution` score.
+## Limitations
 
-Only exact `parent_asin` equality produces a hit. Core metrics are also reported by scenario.
+- The score gain depends on the released intent-card construction, disclosure
+  order, scenario behavior, metric, and ten-turn horizon. Changed private
+  mechanics may reduce it.
+- On an intentionally adversarial, model-generated out-of-distribution
+  diagnostic, exact-value grounding passed `42/52` cases while semantic-value
+  grounding passed `1/35`. See the evaluation report for the complete result.
+- `user_profile` is stored per session but is not used for ranking because no
+  safe, measured personalization improvement was established.
+- One Agent instance supports multiple sequential sessions but requires an
+  external lock if embedded in a concurrent server.
 
-## Model Choice and Cost
+## Submission material
 
-Teams may use any legally accessible LLM API or local model. Teams manage their own credentials and must never commit API keys. Model choice, estimated cost, token usage, and latency must be disclosed. Token usage is a feasibility metric, not part of the core technical score. The organizer does not provide or reimburse model API credits; teams are responsible for any costs incurred through optional external services.
+- [Standalone backend instructions](submission/README.md)
+- [Technical report](submission/REPORT.md)
+- [Technical architecture](docs/ARCHITECTURE.md)
+- [Evaluation report](docs/EVALUATION.md)
+- [Devpost copy](docs/DEVPOST_SUBMISSION.md)
+- [Data attribution](DATA_ATTRIBUTION.md)
+- [Development provenance](docs/DEVELOPMENT_PROVENANCE.md)
 
-## Files
+The technical report records implementation contributions verifiable from the
+Track 4 repository. The final team roster is maintained in the Devpost entry.
 
-```text
-data/public_set.jsonl             200 labeled development sessions
-data/unseen_eval/                 ignored, reproducible shared test outputs
-docs/competition_specification.md participant rules and evaluation protocol
-docs/agent_api_contract.json      machine-readable Agent contract
-docs/evaluation_config.json       scoring configuration
-docs/baseline_results.json        reproducible weak-starter reference score
-docs/TEAM_BASELINE.md             verified team metrics and caveats
-docs/TEAM_ROLES.md                five-person ownership and module contracts
-docs/EXPERIMENT_WORKFLOW.md       isolated candidate and PR/MR rules
-experiments/                      competing NLP and algorithm implementations
-scripts/build_unseen_official_sessions.py deterministic shared test generator
-scripts/run_paraphrase_stress_eval.py      input-language robustness test
-scripts/evaluate_candidate.py              isolated generated-dev candidate runner
-scripts/evaluate_independent_paraphrases.py independent 100-case NLP runner
-tests/fixtures/independent_human_paraphrases.jsonl frozen human-style NLP cases
-starter/agent.py                  compatibility adapter to the selected backend
-starter/parser.py                 compatibility export for the input parser
-submission/agent.py               self-contained competition entry file
-submission/src/shopping_copilot/  parser, state, recovery, inverse filtering, DP
-evaluator/local_evaluator.py      public-set simulator and scorer
-```
+## Data and development disclosure
 
-## Judging and Submission Policy
-
-- Participant submission requirements: `docs/submission_rules.md`
-- Event rules and working checklist: `TECHJAM_PLAN.md`
-- Team workflow: `CONTRIBUTING.md`
-
-## Data Source
-
-The catalog and sessions are derived from Amazon Reviews 2023 by McAuley Lab, UCSD. See `DATA_ATTRIBUTION.md` before using or redistributing the data.
-Sessions are sampled deterministically from the official Clothing 5-core leave-last-out split and joined to the frozen catalog.
+The runtime uses the organizer-supplied catalog derived from Amazon Reviews
+2023. See [Data attribution](DATA_ATTRIBUTION.md). OpenAI Codex assisted with
+development-time inspection, review, testing, benchmark orchestration, and
+documentation; Codex is not imported or called by the submitted Agent.
